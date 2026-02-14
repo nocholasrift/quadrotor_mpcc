@@ -1,0 +1,4 @@
+c_generated_code/
+build/
+.cache/
+__pycache__
