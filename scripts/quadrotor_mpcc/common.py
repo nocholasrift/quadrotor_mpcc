@@ -159,9 +159,20 @@ def draw_gates(gate_data, ax):
 
 
 def interpolLUT(x, y, z, s):
-    x_ref_curve = ca.interpolant("x_ref", "bspline", [s], x)
-    y_ref_curve = ca.interpolant("y_ref", "bspline", [s], y)
-    z_ref_curve = ca.interpolant("z_ref", "bspline", [s], z)
+
+    if isinstance(s, np.ndarray):
+        s_grid = s.tolist()
+    else:
+        s_grid = s
+
+    # Data must be lists of floats
+    x_data = x.tolist() if isinstance(x, np.ndarray) else x
+    y_data = y.tolist() if isinstance(y, np.ndarray) else y
+    z_data = z.tolist() if isinstance(z, np.ndarray) else z
+
+    x_ref_curve = ca.interpolant("x_ref", "bspline", [s_grid], x_data)
+    y_ref_curve = ca.interpolant("y_ref", "bspline", [s_grid], y_data)
+    z_ref_curve = ca.interpolant("z_ref", "bspline", [s_grid], z_data)
 
     return x_ref_curve, y_ref_curve, z_ref_curve
 
@@ -234,7 +245,8 @@ def getRMFBasis(vx, vy, vz, s):
     T[0] = np.array([vx(s[0]), vy(s[0]), vz(s[0])]).reshape(
         3,
     )
-    if abs(np.dot(T[0], ref)):
+    T[0] /= np.linalg.norm(T[0])
+    if abs(np.dot(T[0], ref)) < 1e-8:
         ref = np.array([0.0, 1.0, 0.0])
 
     # T is nearly 1 in magnitude already
@@ -248,6 +260,7 @@ def getRMFBasis(vx, vy, vz, s):
         T[ind + 1] = np.array([vx(s_val), vy(s_val), vz(s_val)]).reshape(
             3,
         )
+        T[ind + 1] /= np.linalg.norm(T[ind + 1])
         v = np.cross(prev_T, T[ind + 1])
         c = np.dot(prev_T, T[ind + 1])
 
@@ -267,6 +280,9 @@ def getRMFBasis(vx, vy, vz, s):
 
         e2[ind + 1] = np.cross(T[ind + 1], e1[ind + 1])
 
+        e1[ind + 1] /= np.linalg.norm(e1[ind + 1])
+        e2[ind + 1] /= np.linalg.norm(e2[ind + 1])
+
     return T, e1, e2
 
 
@@ -281,9 +297,101 @@ def compute_corridor_fs(p_traj, ns, bs, radius=0.5, n_points=20):
     return corridor_pts
 
 
+def get_local_window_params(track_data, s_global_now, window_dist=4.0):
+    s_orig = track_data["s"]
+    s_end = s_global_now + window_dist
+
+    # Create the evaluation points for the knots
+    # We sample knots over the window_dist
+    s_query = np.linspace(s_global_now, s_end, n_knots)
+
+    new_knots = {}
+    for key in [
+        "x",
+        "y",
+        "z",
+        "vx",
+        "vy",
+        "vz",
+        "e1x",
+        "e1y",
+        "e1z",
+        "e2x",
+        "e2y",
+        "e2z",
+    ]:
+        # We use 'period' if your track is a loop, otherwise let it clamp
+        new_knots[key] = np.interp(s_query, s_orig, track_data[key])
+
+    # Construct parameter vector
+    # IMPORTANT: The last parameter is the LENGTH of this local segment
+    local_p = np.concatenate(
+        [
+            new_knots["x"],
+            new_knots["y"],
+            new_knots["z"],
+            new_knots["vx"],
+            new_knots["vy"],
+            new_knots["vz"],
+            new_knots["e1x"],
+            new_knots["e1y"],
+            new_knots["e1z"],
+            new_knots["e2x"],
+            new_knots["e2y"],
+            new_knots["e2z"],
+            [40.0, 400.0, 5, 1.0, 1.0, 0.3],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
+            [window_dist],  # This MUST match the distance used in s_query
+        ]
+    )
+    return local_p
+
+
+def draw_horizon(ax, track_data, state):
+    params = get_local_window_params(track_data, state[10])
+    s_end = state[10] + 4.0
+    print(state[10])
+    knots = np.linspace(state[10], s_end, n_knots)
+
+    n = n_knots
+    x = params[0 * n : 1 * n].tolist()
+    y = params[1 * n : 2 * n].tolist()
+    z = params[2 * n : 3 * n].tolist()
+    vx = params[3 * n : 4 * n].tolist()
+    vy = params[4 * n : 5 * n].tolist()
+    vz = params[5 * n : 6 * n].tolist()
+    e1x = params[6 * n : 7 * n].tolist()
+    e1y = params[7 * n : 8 * n].tolist()
+    e1z = params[8 * n : 9 * n].tolist()
+
+    xref, yref, zref = interpolLUT(x, y, z, knots)
+    vxref, vyref, vzref = interpolLUT(vx, vy, vz, knots)
+    e1xref, e1yref, e1zref = interpolLUT(e1x, e1y, e1z, knots)
+
+    ss = np.linspace(state[10], s_end, n_knots)
+    p = np.zeros((n_knots, 3))
+    t = np.zeros((n_knots, 3))
+    e1 = np.zeros((n_knots, 3))
+    e2 = np.zeros((n_knots, 3))
+    for ind, s in enumerate(ss):
+        p[ind, :] = np.array([xref(s), yref(s), zref(s)]).reshape((3,))
+        t[ind, :] = np.array([vxref(s), vyref(s), vzref(s)]).reshape((3,))
+        e1[ind, :] = np.array([e1xref(s), e1yref(s), e1zref(s)]).reshape((3,))
+        e2[ind, :] = np.cross(e1[ind], t[ind])
+        # print(np.linalg.norm(v), np.linalg.norm(e1), np.linalg.norm(e2))
+
+    return p, t, e1, e2
+
+
 def draw_corridor(
-    ax, x, y, z, vx, vy, vz, s, radius=0.5, color="c", alpha=0.2, show_vectors=False
+    ax, track_data, s, radius=0.5, color="c", alpha=0.2, show_vectors=False
 ):
+    x = track_data["x"]
+    y = track_data["y"]
+    z = track_data["z"]
+    vx = track_data["vx"]
+    vy = track_data["vy"]
+    vz = track_data["vz"]
+
     xref, yref, zref = interpolLUT(x, y, z, s)
     # ts, ns, bs = getFrenSerretBasis(xref, yref, zref, s)
     vxref, vyref, vzref = interpolLUT(vx, vy, vz, s)
@@ -298,7 +406,6 @@ def draw_corridor(
     for circle in corridor_pts:
         ax.plot(circle[:, 0], circle[:, 1], circle[:, 2], color=color, alpha=alpha)
 
-    # Optionally plot N and B vectors
     vec_scale = radius * 0.25
     for i in range(len(ns)):  # plot fewer arrows for clarity
         p = p_traj[i]
@@ -345,6 +452,23 @@ def action_unnormalize(val, min, max):
     return (val + 1.0) * (max - min) / 2.0 + min
 
 
+def resample_path(data_array, N):
+    """
+    Resamples a 1D array to exactly N samples using linear interpolation.
+    """
+    # Current number of points
+    M = len(data_array)
+
+    # Original indices [0, 1, ..., M-1]
+    original_indices = np.linspace(0, M - 1, M)
+
+    # New indices [0, ..., M-1] but with exactly N points
+    new_indices = np.linspace(0, M - 1, N)
+
+    # Interpolate to get values at the new indices
+    return np.interp(new_indices, original_indices, data_array)
+
+
 # CrazyFlie 2.1 physical parameters
 g0 = 9.80665  # [m.s^2] gravitational accerelation
 mq = 31e-3  # [kg] total mass (with Lighthouse deck)
@@ -359,7 +483,7 @@ n_knots = 10
 
 
 min_alpha = 0.1
-max_alpha = 10.0
+max_alpha = 20.0
 
 min_alpha_dot = -3.0
 max_alpha_dot = 3.0
