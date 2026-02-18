@@ -40,6 +40,7 @@ class VolaDroneEnv(gym.Env):
         self.nx = ocp.model.x.rows()  # [px, py, pz, vx, vy, vz, ax, ay, az, s, s_dot]
         self.nu = ocp.model.u.rows()  # [jx, jy, jz, s_ddot]
         self.alpha0 = 5.0
+        self.alpha1 = 0.1
 
         # Load Track metadata
         self.track = track
@@ -54,11 +55,11 @@ class VolaDroneEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(2 * self.M + 2,),
+            shape=(3 * self.M + 1,),
             dtype=np.float32,
         )
 
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
         self.n_consecutive_infeasibilities = 0
 
         if self.should_normalize_obs:
@@ -97,9 +98,10 @@ class VolaDroneEnv(gym.Env):
         return load_gates(track)
 
     def normalize_obs(self, obs, mean, std):
-        obs[:-2] = (obs[:-2] - mean[:-2]) / std[:-2]
-        obs[-2] = 2 * (obs[-2] / self.track_data["s"][-1]) - 1.0
-        obs[-1] = 2 * (obs[-1] - min_alpha) / (max_alpha - min_alpha) - 1
+        obs[:-1] = (obs[:-1] - mean[:-1]) / std[:-1]
+        obs[-1] = 2 * (obs[-2] / self.track_data["s"][-1]) - 1.0
+        # obs[-2] = 2 * (obs[-2] - min_alpha) / (max_alpha - min_alpha) - 1
+        # obs[-1] = 2 * (obs[-1] - min_alpha) / (max_alpha - min_alpha) - 1
 
         return obs
 
@@ -142,10 +144,11 @@ class VolaDroneEnv(gym.Env):
         # self.alpha0 += unnormed_action[0]
         if type(action) is np.ndarray:
             unnormed_action = action_unnormalize(action, min_alpha, max_alpha)
-            self.alpha0 = unnormed_action.item()
+            self.alpha0 = unnormed_action[0]
+            self.alpha1 = unnormed_action[0]
             # print(self.alpha0)
 
-        alphas = np.array([self.alpha0]).reshape((1,))
+        alphas = np.array([self.alpha0, self.alpha1]).reshape((2,))
 
         local_p = np.concatenate([local_p, alphas])
 
@@ -173,10 +176,6 @@ class VolaDroneEnv(gym.Env):
         # Evolve physics
         start = time.time()
         status = self.solver.solve()
-        if status != 0:
-            self.n_consecutive_infeasibilities += 1
-        else:
-            self.n_consecutive_infeasibilities = 0
 
         # print("solve time:", time.time() - start)
 
@@ -196,36 +195,38 @@ class VolaDroneEnv(gym.Env):
 
         # Termination: Finished 99% of the track
         terminated = bool(self.state[10] >= self.track_data["L"] * 0.99)
-        is_done = self.n_consecutive_infeasibilities >= 3
 
         # Truncation: Drone flew way off course (safety check)
         # Using 5 meters from start as a simple failure condition
-        truncated = bool(np.linalg.norm(self.state[:3]) > 100.0)
+        truncated = (
+            bool(np.linalg.norm(self.state[:3]) > 100.0)
+            or self.n_consecutive_infeasibilities >= 3
+        )
 
-        reward = self._get_reward(gym_obs, self.state[-1], terminated)
+        reward = self._get_reward(gym_obs, self.state[-1], terminated, status)
 
+        # print("un-norm", gym_obs)
         if self.should_normalize_obs:
             gym_obs = self.normalize_obs(gym_obs, self.obs_mean, self.obs_std)
 
-        return gym_obs, reward, terminated or is_done, truncated, {}
+        # print("norm", gym_obs)
+        return gym_obs, reward, terminated, truncated, {}
 
     def _get_obs(self, local_p, s):
         n = n_knots
         N = self.N
         M = self.M
 
-        stride = max(1, N // M)
+        inds = np.linspace(0, N, num=M, dtype=int)
         obs = []
 
         u_aplied = self.solver.get(0, "u")
-        for i in range(0, N, stride):
-            if len(obs) >= 2 * M:
-                break
+        for i in inds:
 
-            x_i = self.solver.get(i, "x")
-            u_i = self.solver.get(i, "u") if i < N else u_applied
+            x_i = self.solver.get(int(i), "x")
+            u_i = self.solver.get(int(i), "u")
 
-            Lfh, Lgh, cbf = self.cbf_func(
+            hddot, hdot, cbf, LgLfh = self.cbf_func(
                 local_p[0:n],
                 local_p[n : 2 * n],
                 local_p[2 * n : 3 * n],
@@ -238,26 +239,29 @@ class VolaDroneEnv(gym.Env):
                 local_p[9 * n : 10 * n],
                 local_p[10 * n : 11 * n],
                 local_p[11 * n : 12 * n],
-                local_p[-2],  # L_path (check index carefully)
+                local_p[-3],  # L_path (check index carefully)
                 x_i,
                 u_i,
             )
 
-            Lfh = float(Lfh)
-            Lgh = np.array(Lgh).flatten()
+            print(LgLfh)
 
+            hddot = np.array(hddot)
+            hddot = hddot.item()
             cbf = np.clip(float(cbf), -5, 5)
-            phi = np.clip(Lfh + np.dot(Lgh, u_i), -50, 50)
+            hdot = np.clip(float(hdot), -50, 50)
+            hddot = np.clip(hddot, -50, 50)
 
-            obs.extend([phi, cbf])
+            obs.extend([cbf, hdot, hddot])
 
         obs.append(s)
-        obs.append(self.alpha0)
+        # obs.append(self.alpha0)
+        # obs.append(self.alpha1)
 
         obs = np.nan_to_num(obs, nan=0.0, posinf=0.0, neginf=0.0)
         return np.array(obs, dtype=np.float32)
 
-    def _get_reward(self, obs, s_dot, terminated):
+    def _get_reward(self, obs, s_dot, terminated, solver_status):
 
         # 1. Progress reward
         progress_reward = 0.2 * np.clip(s_dot, 0, 3.0)  # Range: [0, 6]
@@ -268,11 +272,12 @@ class VolaDroneEnv(gym.Env):
         M = self.M
         alpha = self.alpha0
         for i in range(M):
-            phi = obs[2 * i]
-            cbf = obs[2 * i + 1]
+            cbf = obs[3 * i]
+            hdot = obs[3 * i + 1]
+            hddot = obs[3 * i + 2]
 
             # Check constraint: Lfh + alpha*cbf >= 0
-            constraint_value = phi + alpha * cbf
+            constraint_value = self.alpha0 * cbf + self.alpha1 * hdot + hddot
 
             if constraint_value < 0:  # Violation
                 # Penalize proportional to violation magnitude
@@ -280,7 +285,8 @@ class VolaDroneEnv(gym.Env):
 
         # 3. Alpha regularization (prefer small alpha for efficiency)
         # alpha typically in [0.1, 10]
-        alpha_reg = -0.02 * alpha  # Range: [-0.005, -0.5]
+        # alpha_reg = -0.02 * alpha  # Range: [-0.005, -0.5]
+        alpha_reg = 0
 
         # 4. Feasibility penalties (keep alpha in bounds)
         feasibility_penalty = 0.0
@@ -292,12 +298,23 @@ class VolaDroneEnv(gym.Env):
         # 5. Terminal bonus (reached goal)
         terminal_bonus = 5.0 if terminated else 0.0
 
+        solver_status_reward = 0
+        if solver_status != 0:
+            self.n_consecutive_infeasibilities += 1
+            solver_status_reward -= 1.0
+        else:
+            self.n_consecutive_infeasibilities = 0
+
+        if self.n_consecutive_infeasibilities >= 3:
+            solver_status_reward -= 20
+
         if np.random.random() < 0.01:  # Log 1% of the time
             print(
                 f"Reward breakdown: progress={progress_reward:.2f}, "
                 f"cbf_viol={cbf_violation_penalty:.2f}, "
                 f"alpha_reg={alpha_reg:.2f}, "
                 f"feasibility={feasibility_penalty:.2f}"
+                f"solver_reward={solver_status_reward:.2f}"
             )
 
         # Total reward
@@ -307,6 +324,7 @@ class VolaDroneEnv(gym.Env):
             + alpha_reg
             + feasibility_penalty
             + terminal_bonus
+            + solver_status_reward
         )
 
         return reward
@@ -327,16 +345,15 @@ class VolaDroneEnv(gym.Env):
                 )
 
                 # draw_gates(self.gate_data, self.ax)
-                draw_corridor(
-                    self.ax,
-                    self.track_data,
-                    np.linspace(0, self.track_data["L"], len(self.track_data["x"])),
-                    radius=1.0,
-                    color="c",
-                    alpha=0.2,
-                )
+                # draw_corridor(
+                #     self.ax,
+                #     self.track_data,
+                #     np.linspace(0, self.track_data["L"], len(self.track_data["x"])),
+                #     radius=1.0,
+                #     color="c",
+                #     alpha=0.2,
+                # )
 
-                empty_data = np.zeros((n_knots, 3))
                 self.t_quiv = self.ax.quiver(
                     [],
                     [],
@@ -465,7 +482,7 @@ def main():
         _, _, done, _, _ = env.step()
         env.render()
 
-        # input()
+        input()
         if done:
             input()
             break

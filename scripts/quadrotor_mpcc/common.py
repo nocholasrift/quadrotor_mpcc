@@ -339,7 +339,7 @@ def get_local_window_params(track_data, s_global_now, window_dist=4.0):
             new_knots["e2x"],
             new_knots["e2y"],
             new_knots["e2z"],
-            [40.0, 400.0, 5, 1.0, 1.0, 0.3],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
+            [40.0, 400.0, 10, 1.0, 1.0, 0.3],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
             [window_dist],  # This MUST match the distance used in s_query
         ]
     )

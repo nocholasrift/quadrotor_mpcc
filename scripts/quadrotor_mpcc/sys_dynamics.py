@@ -188,25 +188,27 @@ class SysDyn:
         dist_to_path = ca.norm_2(e_perp)
 
         radius = 1.0
-        h = radius - dist_to_path
+        # cbf = radius - dist_to_path
+        cbf = radius**2 - ca.dot(e_perp, e_perp)
 
-        perp_dir = e_perp / (
-            ca.norm_2(e_perp) + 1e-8
-        )  # Unit vector pointing away from path
-
-        thrust_dir = Rq[:, 2]
-        thrust_perp = (
-            thrust_dir - ca.dot(thrust_dir, tr) * tr
-        )  # Remove tangential component
-        thrust_toward_boundary = ca.dot(thrust_perp, perp_dir)
-
-        v_perp = v - ca.dot(v, tr) * tr  # Remove tangential component
-        v_toward_boundary = ca.dot(v_perp, perp_dir)
-
-        beta = 0.05
-        p = thrust_toward_boundary + beta * v_toward_boundary
-        p_clamped = ca.fmax(ca.fmin(p, 1.0), -1.0)
-        cbf = h * ca.exp(-p_clamped)
+        # perp_dir = e_perp / (
+        #     ca.norm_2(e_perp) + 1e-8
+        # )  # Unit vector pointing away from path
+        #
+        # thrust_dir = Rq[:, 2]
+        # thrust_perp = (
+        #     thrust_dir - ca.dot(thrust_dir, tr) * tr
+        # )  # Remove tangential component
+        # thrust_toward_boundary = ca.dot(thrust_perp, perp_dir)
+        #
+        # v_perp = v - ca.dot(v, tr) * tr  # Remove tangential component
+        # v_toward_boundary = ca.dot(v_perp, perp_dir)
+        #
+        # beta = 0.05
+        # # p = thrust_toward_boundary  + beta * v_toward_boundary
+        # p = beta * v_toward_boundary
+        # p_clamped = ca.fmax(ca.fmin(p, 1.0), -1.0)
+        # cbf = h * ca.exp(-p_clamped)
 
         # radius = 0.5
         # h = 1 - (b1 / radius) ** 2 - (b2 / radius) ** 2
@@ -245,10 +247,12 @@ class SysDyn:
         LgLfh = grad_Lfh @ G
 
         alpha0 = ca.MX.sym("alpha0")
+        alpha1 = ca.MX.sym("alpha1")
 
-        # cbf_cons = Lf2h + LgLfh @ u + alpha1 * Lfh + alpha0 * cbf
-        Lgh = grad_h @ G
-        cbf_cons = Lfh + Lgh @ u + alpha0 * cbf
+        hddot = Lf2h + LgLfh @ u
+        cbf_cons = hddot + alpha1 * Lfh + alpha0 * cbf
+        # Lgh = grad_h @ G
+        # cbf_cons = Lfh + Lgh @ u + alpha0 * cbf
 
         # control lyap
         # tr_dot = ca.jacobian(tr, s) * s_dot
@@ -285,7 +289,7 @@ class SysDyn:
             Q_s,
             L_path,
             alpha0,
-            # alpha1,
+            alpha1,
         )
 
         s_cons = s - L_path
@@ -309,7 +313,7 @@ class SysDyn:
                 x,
                 u,
             ],
-            [Lfh, Lgh, cbf],
+            [hddot, Lfh, cbf, LgLfh],
             [
                 "x_c",
                 "y_c",
@@ -327,7 +331,7 @@ class SysDyn:
                 "x_val",
                 "u",
             ],
-            ["Lfh", "Lgh", "cbf"],
+            ["hddot", "Lfh", "cbf", "LgLfh"],
         )
 
         model = AcadosModel()

@@ -21,10 +21,11 @@ def collect_normalization_statistics(
         for step in range(steps_per_episode):
             # Random actions
             obs, reward, done, truncated, info = env.step()
-            obs_buffer.append(obs)
 
             if done or truncated:
                 break
+
+            obs_buffer.append(obs)
 
     # Compute statistics
     obs_array = np.array(obs_buffer)

@@ -56,29 +56,27 @@ def create_ocp():
     ocp.constraints.lh_e = np.array([con_lower_bounds[-1]])
 
     # soft constraints
-    nsh = 1
-    ocp.constraints.lsh_0 = np.zeros((nsh,))
-    ocp.constraints.ush_0 = np.zeros((nsh,))
-    # ocp.constraints.idxsh_0 = np.array([0, 1])
-    ocp.constraints.idxsh_0 = np.array([0])
-
-    ocp.constraints.lsh = np.zeros((nsh,))
-    ocp.constraints.ush = np.zeros((nsh,))
-    # ocp.constraints.idxsh = np.array([0, 1])
-    ocp.constraints.idxsh = np.array([0])
-
-    grad_cost = 1e4
-    hess_cost = 1e2
-
-    ocp.cost.Zl_0 = hess_cost * np.ones((nsh,))
-    ocp.cost.Zu_0 = hess_cost * np.ones((nsh,))
-    ocp.cost.zl_0 = grad_cost * np.ones((nsh,))
-    ocp.cost.zu_0 = grad_cost * np.ones((nsh,))
-
-    ocp.cost.Zl = hess_cost * np.ones((nsh,))
-    ocp.cost.Zu = hess_cost * np.ones((nsh,))
-    ocp.cost.zl = grad_cost * np.ones((nsh,))
-    ocp.cost.zu = grad_cost * np.ones((nsh,))
+    # nsh = 1
+    # ocp.constraints.lsh_0 = np.zeros((nsh,))
+    # ocp.constraints.ush_0 = np.zeros((nsh,))
+    # ocp.constraints.idxsh_0 = np.array([0])
+    #
+    # ocp.constraints.lsh = np.zeros((nsh,))
+    # ocp.constraints.ush = np.zeros((nsh,))
+    # ocp.constraints.idxsh = np.array([0])
+    #
+    # grad_cost = 1e4
+    # hess_cost = 1e2
+    #
+    # ocp.cost.Zl_0 = hess_cost * np.ones((nsh,))
+    # ocp.cost.Zu_0 = hess_cost * np.ones((nsh,))
+    # ocp.cost.zl_0 = grad_cost * np.ones((nsh,))
+    # ocp.cost.zu_0 = grad_cost * np.ones((nsh,))
+    #
+    # ocp.cost.Zl = hess_cost * np.ones((nsh,))
+    # ocp.cost.Zu = hess_cost * np.ones((nsh,))
+    # ocp.cost.zl = grad_cost * np.ones((nsh,))
+    # ocp.cost.zu = grad_cost * np.ones((nsh,))
 
     # grad_cost = 1e4
     # hess_cost = 1e2
