@@ -185,11 +185,14 @@ class SysDyn:
         G[11, 4] = 1
 
         e_perp = e_tot - e_l_vec
-        dist_to_path = ca.norm_2(e_perp)
+        v_perp = v - ca.dot(v, tr) * tr
+
+        alignment = ca.dot(e_perp, v)
 
         radius = 1.0
         # cbf = radius - dist_to_path
-        cbf = radius**2 - ca.dot(e_perp, e_perp)
+        # cbf = radius**2 - ca.dot(e_perp, e_perp) - 2 * .05 * ca.dot(e_perp, v_perp)
+        cbf = radius**2 - ca.dot(e_perp, e_perp) - .05 * alignment
 
         # perp_dir = e_perp / (
         #     ca.norm_2(e_perp) + 1e-8
@@ -240,8 +243,16 @@ class SysDyn:
         #
         # cbf = h * ca.exp(-p)
 
+        z_b = Rq[:, 2]
+        f_danger = .05 * ca.dot(e_perp, v) + .1 * ca.dot(e_perp, z_b)
+
+        h_pos = radius**2 - ca.dot(e_perp, e_perp)
+        cbf = h_pos * ca.exp(-f_danger)
+        # cbf = h_pos / (1.0 + f_danger**2)
+
         grad_h = ca.jacobian(cbf, x)
         Lfh = grad_h @ F
+        Lgh = grad_h @ G
         grad_Lfh = ca.jacobian(Lfh, x)
         Lf2h = grad_Lfh @ F
         LgLfh = grad_Lfh @ G
@@ -250,9 +261,8 @@ class SysDyn:
         alpha1 = ca.MX.sym("alpha1")
 
         hddot = Lf2h + LgLfh @ u
-        cbf_cons = hddot + alpha1 * Lfh + alpha0 * cbf
-        # Lgh = grad_h @ G
-        # cbf_cons = Lfh + Lgh @ u + alpha0 * cbf
+        # cbf_cons = hddot + alpha1 * Lfh + alpha0 * cbf
+        cbf_cons = Lfh + Lgh@u + alpha0 * cbf
 
         # control lyap
         # tr_dot = ca.jacobian(tr, s) * s_dot
@@ -313,7 +323,7 @@ class SysDyn:
                 x,
                 u,
             ],
-            [hddot, Lfh, cbf, LgLfh],
+            [hddot, Lfh, cbf, Lgh],
             [
                 "x_c",
                 "y_c",

@@ -39,7 +39,7 @@ class VolaDroneEnv(gym.Env):
         self.M = 3
         self.nx = ocp.model.x.rows()  # [px, py, pz, vx, vy, vz, ax, ay, az, s, s_dot]
         self.nu = ocp.model.u.rows()  # [jx, jy, jz, s_ddot]
-        self.alpha0 = 5.0
+        self.alpha0 = 1.0
         self.alpha1 = 0.1
 
         # Load Track metadata
@@ -59,7 +59,7 @@ class VolaDroneEnv(gym.Env):
             dtype=np.float32,
         )
 
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
         self.n_consecutive_infeasibilities = 0
 
         if self.should_normalize_obs:
@@ -244,7 +244,7 @@ class VolaDroneEnv(gym.Env):
                 u_i,
             )
 
-            print(LgLfh)
+            # print(LgLfh)
 
             hddot = np.array(hddot)
             hddot = hddot.item()
@@ -475,14 +475,14 @@ def main():
     # track = "race_uzh_19g"
 
     ocp, cbf_func = create_ocp()
-    env = VolaDroneEnv(ocp, track, render_mode="human", cbf_func=cbf_func)
+    env = VolaDroneEnv(ocp, track, render_mode="human", cbf_func=cbf_func, normalize_obs=False)
 
     env.reset()
     for i in range(0, 2000):
         _, _, done, _, _ = env.step()
         env.render()
 
-        input()
+        # input()
         if done:
             input()
             break
