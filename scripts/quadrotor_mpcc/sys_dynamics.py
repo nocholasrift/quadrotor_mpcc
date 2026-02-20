@@ -192,7 +192,7 @@ class SysDyn:
         radius = 1.0
         # cbf = radius - dist_to_path
         # cbf = radius**2 - ca.dot(e_perp, e_perp) - 2 * .05 * ca.dot(e_perp, v_perp)
-        cbf = radius**2 - ca.dot(e_perp, e_perp) - .05 * alignment
+        cbf = radius**2 - ca.dot(e_perp, e_perp) - 0.05 * alignment
 
         # perp_dir = e_perp / (
         #     ca.norm_2(e_perp) + 1e-8
@@ -244,7 +244,7 @@ class SysDyn:
         # cbf = h * ca.exp(-p)
 
         z_b = Rq[:, 2]
-        f_danger = .05 * ca.dot(e_perp, v) + .1 * ca.dot(e_perp, z_b)
+        f_danger = 0.05 * ca.dot(e_perp, v) + 0.1 * ca.dot(e_perp, z_b)
 
         h_pos = radius**2 - ca.dot(e_perp, e_perp)
         cbf = h_pos * ca.exp(-f_danger)
@@ -262,7 +262,7 @@ class SysDyn:
 
         hddot = Lf2h + LgLfh @ u
         # cbf_cons = hddot + alpha1 * Lfh + alpha0 * cbf
-        cbf_cons = Lfh + Lgh@u + alpha0 * cbf
+        cbf_cons = Lfh + Lgh @ u + alpha0 * cbf
 
         # control lyap
         # tr_dot = ca.jacobian(tr, s) * s_dot
@@ -299,7 +299,7 @@ class SysDyn:
             Q_s,
             L_path,
             alpha0,
-            alpha1,
+            # alpha1,
         )
 
         s_cons = s - L_path

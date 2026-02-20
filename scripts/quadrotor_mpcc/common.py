@@ -219,7 +219,7 @@ def getFrenSerretBasis(x_func, y_func, z_func, s_vals):
         # normalize tangent
         t_norm = t
 
-        print(i, "\t", dt_ds)
+        # print(i, "\t", dt_ds)
         # normal vector
         n = dt_ds
         n /= np.linalg.norm(n) + 1e-8
@@ -349,7 +349,7 @@ def get_local_window_params(track_data, s_global_now, window_dist=4.0):
 def draw_horizon(ax, track_data, state):
     params = get_local_window_params(track_data, state[10])
     s_end = state[10] + 4.0
-    print(state[10])
+    # print(state[10])
     knots = np.linspace(state[10], s_end, n_knots)
 
     n = n_knots
@@ -483,7 +483,7 @@ n_knots = 10
 
 
 min_alpha = 0.1
-max_alpha = 20.0
+max_alpha = 10.0
 
 min_alpha_dot = -3.0
 max_alpha_dot = 3.0

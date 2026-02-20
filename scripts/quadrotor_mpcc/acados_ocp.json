@@ -1,7 +1,7 @@
 {
-    "acados_include_path": "/Users/nickmohammad/Programs/acados/include",
-    "acados_lib_path": "/Users/nickmohammad/Programs/acados/lib",
-    "code_export_directory": "/Users/nickmohammad/Programs/quadrotor_mpcc/scripts/quadrotor_mpcc/c_generated_code",
+    "acados_include_path": "/home/nick/Programs/acados/include",
+    "acados_lib_path": "/home/nick/Programs/acados/lib",
+    "code_export_directory": "/home/nick/iros_26_ws/src/quadrotor_mpcc/scripts/quadrotor_mpcc/c_generated_code",
     "constraints": {
         "C": [],
         "C_e": [],
@@ -199,8 +199,8 @@
         "zu_e": []
     },
     "cython_include_dirs": [
-        "/Users/nickmohammad/Programs/venv/lib/python3.14/site-packages/numpy/_core/include",
-        "/opt/homebrew/opt/python@3.14/Frameworks/Python.framework/Versions/3.14/include/python3.14"
+        "/home/nick/iros_26_ws/venv/iros26/lib/python3.8/site-packages/numpy/core/include",
+        "/usr/include/python3.8"
     ],
     "dims": {
         "N": 20,
@@ -215,7 +215,7 @@
         "nh": 2,
         "nh_0": 2,
         "nh_e": 1,
-        "np": 129,
+        "np": 128,
         "np_global": 0,
         "nphi": 0,
         "nphi_0": 0,
@@ -314,7 +314,7 @@
         "gnsf_purely_linear": 0,
         "name": "quadrotor_mpcc",
         "nu_original": null,
-        "p": "vertcat(x_coeffs, y_coeffs, z_coeffs, vx_coeffs, vy_coeffs, vz_coeffs, e1x_coeffs, e1y_coeffs, e1z_coeffs, e2x_coeffs, e2y_coeffs, e2z_coeffs, Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s, L_path, alpha0, alpha1)",
+        "p": "vertcat(x_coeffs, y_coeffs, z_coeffs, vx_coeffs, vy_coeffs, vz_coeffs, e1x_coeffs, e1y_coeffs, e1z_coeffs, e2x_coeffs, e2y_coeffs, e2z_coeffs, Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s, L_path, alpha0)",
         "p_global": "0x1",
         "t": [],
         "t0": null,
@@ -473,11 +473,10 @@
         0.0,
         0.0,
         0.0,
-        0.0,
         0.0
     ],
     "problem_class": "OCP",
-    "shared_lib_ext": ".dylib",
+    "shared_lib_ext": ".so",
     "simulink_opts": null,
     "solver_options": {
         "N_horizon": 20,
@@ -485,7 +484,6 @@
         "adaptive_levenberg_marquardt_lam": 5.0,
         "adaptive_levenberg_marquardt_mu0": 0.001,
         "adaptive_levenberg_marquardt_mu_min": 1e-16,
-        "allow_direction_mode_switch_to_nominal": true,
         "as_rti_iter": 1,
         "as_rti_level": 4,
         "collocation_type": "GAUSS_LEGENDRE",
@@ -523,10 +521,7 @@
         "exact_hess_dyn": 1,
         "ext_cost_num_hess": 0,
         "ext_fun_compile_flags": "-O2",
-        "ext_fun_expand_constr": false,
-        "ext_fun_expand_cost": false,
-        "ext_fun_expand_dyn": false,
-        "ext_fun_expand_precompute": false,
+        "ext_fun_expand": false,
         "fixed_hess": 0,
         "globalization": "FIXED_STEP",
         "globalization_alpha_min": 0.05,
@@ -540,7 +535,6 @@
         "globalization_funnel_initial_penalty_parameter": 1.0,
         "globalization_funnel_kappa": 0.9,
         "globalization_funnel_sufficient_decrease_factor": 0.9,
-        "globalization_funnel_use_merit_fun_only": false,
         "globalization_line_search_use_sufficient_descent": 0,
         "globalization_use_SOC": 0,
         "hessian_approx": "GAUSS_NEWTON",
@@ -575,14 +569,10 @@
         "qp_solver_tol_ineq": null,
         "qp_solver_tol_stat": null,
         "qp_solver_warm_start": 0,
-        "reg_adaptive_eps": false,
         "reg_epsilon": 0.0001,
-        "reg_max_cond_block": 10000000.0,
-        "reg_min_epsilon": 1e-08,
         "regularize_method": "MIRROR",
         "rti_log_only_available_residuals": 0,
         "rti_log_residuals": 0,
-        "search_direction_mode": "NOMINAL_QP",
         "shooting_nodes": [
             0.0,
             0.05,
@@ -702,7 +692,6 @@
         ],
         "timeout_heuristic": "LAST",
         "timeout_max_time": 0.0,
-        "use_constraint_hessian_in_feas_qp": false,
         "with_adaptive_levenberg_marquardt": false,
         "with_solution_sens_wrt_params": false,
         "with_value_sens_wrt_params": false

@@ -17,7 +17,7 @@ integrator = AcadosSimSolver(ocp)
 
 def make_env():
     env = VolaDroneEnv(
-        ocp, "12gates", solver=solver, integrator=integrator, cbf_func=cbf_func
+        ocp, "race_uzh_19g", solver=solver, integrator=integrator, cbf_func=cbf_func
     )
     env = Monitor(env)  # logs episode rewards
     return env

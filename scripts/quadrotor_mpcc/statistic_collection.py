@@ -51,7 +51,7 @@ def collect_normalization_statistics(
 
 
 if __name__ == "__main__":
-    track = "12gates"
+    track = "race_uzh_19g"
     collect_normalization_statistics(
         track=track, num_episodes=10, steps_per_episode=500
     )

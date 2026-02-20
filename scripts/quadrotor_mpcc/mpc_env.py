@@ -39,8 +39,8 @@ class VolaDroneEnv(gym.Env):
         self.M = 3
         self.nx = ocp.model.x.rows()  # [px, py, pz, vx, vy, vz, ax, ay, az, s, s_dot]
         self.nu = ocp.model.u.rows()  # [jx, jy, jz, s_ddot]
-        self.alpha0 = 1.0
-        self.alpha1 = 0.1
+
+        self.alpha0 = 0.1
 
         # Load Track metadata
         self.track = track
@@ -55,7 +55,7 @@ class VolaDroneEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(3 * self.M + 1,),
+            shape=(2 * self.M + 1,),
             dtype=np.float32,
         )
 
@@ -66,6 +66,8 @@ class VolaDroneEnv(gym.Env):
             stats = np.load(f"stats/{track}_normalization_stats.npz")
             self.obs_mean = stats["obs_mean"]
             self.obs_std = stats["obs_std"]
+
+        # self.reset()
 
     def _setup_track(self, track):
         [s, x, y, z, vx, vy, vz] = getTrack(track)
@@ -115,6 +117,11 @@ class VolaDroneEnv(gym.Env):
 
         self.n_consecutive_infeasibilities = 0
 
+        for stage in range(self.N + 1):
+            self.solver.set(stage, "x", self.state)
+            if stage < self.N:
+                self.solver.set(stage, "u", np.zeros(self.nu))
+
         self.params = np.concatenate(
             [
                 self.track_data["x"],
@@ -145,10 +152,9 @@ class VolaDroneEnv(gym.Env):
         if type(action) is np.ndarray:
             unnormed_action = action_unnormalize(action, min_alpha, max_alpha)
             self.alpha0 = unnormed_action[0]
-            self.alpha1 = unnormed_action[0]
             # print(self.alpha0)
 
-        alphas = np.array([self.alpha0, self.alpha1]).reshape((2,))
+        alphas = np.array([self.alpha0]).reshape((1,))
 
         local_p = np.concatenate([local_p, alphas])
 
@@ -217,7 +223,7 @@ class VolaDroneEnv(gym.Env):
         N = self.N
         M = self.M
 
-        inds = np.linspace(0, N, num=M, dtype=int)
+        inds = np.linspace(1, N - 1, num=M, dtype=int)
         obs = []
 
         u_aplied = self.solver.get(0, "u")
@@ -226,7 +232,7 @@ class VolaDroneEnv(gym.Env):
             x_i = self.solver.get(int(i), "x")
             u_i = self.solver.get(int(i), "u")
 
-            hddot, hdot, cbf, LgLfh = self.cbf_func(
+            hddot, lfh, cbf, lgh = self.cbf_func(
                 local_p[0:n],
                 local_p[n : 2 * n],
                 local_p[2 * n : 3 * n],
@@ -239,20 +245,19 @@ class VolaDroneEnv(gym.Env):
                 local_p[9 * n : 10 * n],
                 local_p[10 * n : 11 * n],
                 local_p[11 * n : 12 * n],
-                local_p[-3],  # L_path (check index carefully)
+                local_p[-2],  # L_path (check index carefully)
                 x_i,
                 u_i,
             )
 
             # print(LgLfh)
 
-            hddot = np.array(hddot)
-            hddot = hddot.item()
+            # print(lfh, lgh, u_i)
+            hdot = lfh + lgh @ u_i
             cbf = np.clip(float(cbf), -5, 5)
             hdot = np.clip(float(hdot), -50, 50)
-            hddot = np.clip(hddot, -50, 50)
 
-            obs.extend([cbf, hdot, hddot])
+            obs.extend([cbf, hdot])
 
         obs.append(s)
         # obs.append(self.alpha0)
@@ -272,12 +277,11 @@ class VolaDroneEnv(gym.Env):
         M = self.M
         alpha = self.alpha0
         for i in range(M):
-            cbf = obs[3 * i]
-            hdot = obs[3 * i + 1]
-            hddot = obs[3 * i + 2]
+            cbf = obs[2 * i]
+            hdot = obs[2 * i + 1]
 
             # Check constraint: Lfh + alpha*cbf >= 0
-            constraint_value = self.alpha0 * cbf + self.alpha1 * hdot + hddot
+            constraint_value = self.alpha0 * cbf + hdot
 
             if constraint_value < 0:  # Violation
                 # Penalize proportional to violation magnitude
@@ -285,8 +289,8 @@ class VolaDroneEnv(gym.Env):
 
         # 3. Alpha regularization (prefer small alpha for efficiency)
         # alpha typically in [0.1, 10]
-        # alpha_reg = -0.02 * alpha  # Range: [-0.005, -0.5]
-        alpha_reg = 0
+        alpha_reg = -0.02 * alpha  # Range: [-0.005, -0.5]
+        # alpha_reg = 0
 
         # 4. Feasibility penalties (keep alpha in bounds)
         feasibility_penalty = 0.0
@@ -471,11 +475,13 @@ def main():
     # track = "7gates"
     # track = "figure8"
     # track = "knotted_helix"
-    track = "12gates"
+    track = "race_uzh_19g"
     # track = "race_uzh_19g"
 
     ocp, cbf_func = create_ocp()
-    env = VolaDroneEnv(ocp, track, render_mode="human", cbf_func=cbf_func, normalize_obs=False)
+    env = VolaDroneEnv(
+        ocp, track, render_mode="human", cbf_func=cbf_func, normalize_obs=False
+    )
 
     env.reset()
     for i in range(0, 2000):
