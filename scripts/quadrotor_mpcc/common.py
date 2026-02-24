@@ -36,6 +36,7 @@ import casadi as ca
 import os
 from pathlib import Path
 from typing import Union
+from tube_gen import *
 
 """Global variables"""
 
@@ -233,6 +234,19 @@ def getFrenSerretBasis(x_func, y_func, z_func, s_vals):
 
     return ts, ns, bs
 
+def casadi_chebyshev_basis(xi, degree):
+    T = [0] * (degree + 1)
+    x = 2 * xi - 1
+
+    T[0] = 1
+    if degree >= 1:
+
+        T[1] = x
+
+    for k in range(2, degree+1):
+        T[k] = 2 * x * T[k-1] - T[k-2]
+
+    return T
 
 def getRMFBasis(vx, vy, vz, s):
 
@@ -246,7 +260,7 @@ def getRMFBasis(vx, vy, vz, s):
         3,
     )
     T[0] /= np.linalg.norm(T[0])
-    if abs(np.dot(T[0], ref)) < 1e-8:
+    if abs(1 - np.dot(T[0], ref)) < 1e-8:
         ref = np.array([0.0, 1.0, 0.0])
 
     # T is nearly 1 in magnitude already
@@ -297,13 +311,13 @@ def compute_corridor_fs(p_traj, ns, bs, radius=0.5, n_points=20):
     return corridor_pts
 
 
-def get_local_window_params(track_data, s_global_now, window_dist=4.0):
+def get_local_window_params(track_data, s_global_now, num_knots, window_dist=4.0):
     s_orig = track_data["s"]
-    s_end = s_global_now + window_dist
+    s_end = min(s_global_now + window_dist, s_orig[-1])
 
     # Create the evaluation points for the knots
     # We sample knots over the window_dist
-    s_query = np.linspace(s_global_now, s_end, n_knots)
+    s_query = np.linspace(s_global_now, s_end, num_knots)
 
     new_knots = {}
     for key in [
@@ -325,43 +339,64 @@ def get_local_window_params(track_data, s_global_now, window_dist=4.0):
 
     # Construct parameter vector
     # IMPORTANT: The last parameter is the LENGTH of this local segment
-    local_p = np.concatenate(
-        [
-            new_knots["x"],
-            new_knots["y"],
-            new_knots["z"],
-            new_knots["vx"],
-            new_knots["vy"],
-            new_knots["vz"],
-            new_knots["e1x"],
-            new_knots["e1y"],
-            new_knots["e1z"],
-            new_knots["e2x"],
-            new_knots["e2y"],
-            new_knots["e2z"],
-            [40.0, 400.0, 10, 1.0, 1.0, 0.3],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
-            [window_dist],  # This MUST match the distance used in s_query
-        ]
-    )
-    return local_p
+    local_window = {
+        "s": s_query,
+        "x": new_knots["x"],
+        "y": new_knots["y"],
+        "z": new_knots["z"],
+        "vx": new_knots["vx"],
+        "vy": new_knots["vy"],
+        "vz": new_knots["vz"],
+        "e1x": new_knots["e1x"],
+        "e1y": new_knots["e1y"],
+        "e1z": new_knots["e1z"],
+        "e2x": new_knots["e2x"],
+        "e2y": new_knots["e2y"],
+        "e2z": new_knots["e2z"],
+        "L": s_end - s_global_now,
+    }
+
+    return local_window
+
+def build_acados_params(local_window, global_params, tube_coeffs):
+    return {
+        "x":            local_window["x"],
+        "y":            local_window["y"],
+        "z":            local_window["z"],
+        "vx":           local_window["vx"],
+        "vy":           local_window["vy"],
+        "vz":           local_window["vz"],
+        "e1x":          local_window["e1x"],
+        "e1y":          local_window["e1y"],
+        "e1z":          local_window["e1z"],
+        "tube_a":       tube_coeffs[0, :],
+        "tube_b":       tube_coeffs[1, :],
+        "tube_c":       tube_coeffs[2, :],
+        "tube_d":       tube_coeffs[3, :],
+        "L":            np.array([local_window["L"]]),
+        "global_params": np.atleast_1d(global_params),
+    }
+
+def dict_to_list(d):
+    return np.concatenate(list(d.values()))
 
 
 def draw_horizon(ax, track_data, state):
-    params = get_local_window_params(track_data, state[10])
+    window = get_local_window_params(track_data, state[10], n_knots)
     s_end = state[10] + 4.0
     # print(state[10])
     knots = np.linspace(state[10], s_end, n_knots)
 
     n = n_knots
-    x = params[0 * n : 1 * n].tolist()
-    y = params[1 * n : 2 * n].tolist()
-    z = params[2 * n : 3 * n].tolist()
-    vx = params[3 * n : 4 * n].tolist()
-    vy = params[4 * n : 5 * n].tolist()
-    vz = params[5 * n : 6 * n].tolist()
-    e1x = params[6 * n : 7 * n].tolist()
-    e1y = params[7 * n : 8 * n].tolist()
-    e1z = params[8 * n : 9 * n].tolist()
+    x = window["x"].tolist()
+    y = window["y"].tolist()
+    z = window["z"].tolist()
+    vx = window["vx"].tolist()
+    vy = window["vy"].tolist()
+    vz = window["vz"].tolist()
+    e1x = window["e1x"].tolist()
+    e1y = window["e1y"].tolist()
+    e1z = window["e1z"].tolist()
 
     xref, yref, zref = interpolLUT(x, y, z, knots)
     vxref, vyref, vzref = interpolLUT(vx, vy, vz, knots)
@@ -382,71 +417,76 @@ def draw_horizon(ax, track_data, state):
     return p, t, e1, e2
 
 
-def draw_corridor(
-    ax, track_data, s, radius=0.5, color="c", alpha=0.2, show_vectors=False
+def get_corridor_pts(
+    ax, track_data, coeffs, alpha=0.2
 ):
+    n_sweep = 100
+    xi_eval = np.linspace(0, 1, n_sweep)
+    P_eval = np.zeros((n_sweep, 2, 2))
+    pp_eval = np.zeros((n_sweep, 2))
+
+    poly_deg = len(coeffs[0]) - 1
+    Phi_sweep = get_cheby_basis(xi_eval, poly_deg)
+    a, b, c, d = coeffs
+
+    a_sweep = Phi_sweep @ a
+    b_sweep = Phi_sweep @ b
+    c_sweep = Phi_sweep @ c
+    d_sweep = Phi_sweep @ d
+
+    s_sweep = track_data["s"]
+    s_sweep = s_sweep - s_sweep[0]
+
+    # print(s_sweep)
+    L_path = s_sweep[-1]
+    # L_path = track_data["L"]
+
     x = track_data["x"]
     y = track_data["y"]
     z = track_data["z"]
+    traj = np.vstack([x, y, z]).T
+
     vx = track_data["vx"]
     vy = track_data["vy"]
     vz = track_data["vz"]
+    tan = np.vstack([vx, vy, vz]).T
+    tan /= np.linalg.norm(tan, axis=1)[:, np.newaxis]
 
-    xref, yref, zref = interpolLUT(x, y, z, s)
-    # ts, ns, bs = getFrenSerretBasis(xref, yref, zref, s)
-    vxref, vyref, vzref = interpolLUT(vx, vy, vz, s)
-    ts, ns, bs = getRMFBasis(vxref, vyref, vzref, s)
+    e1x = track_data["e1x"]
+    e1y = track_data["e1y"]
+    e1z = track_data["e1z"]
+    e1 = np.vstack([e1x, e1y, e1z]).T
+    e1 /= np.linalg.norm(e1, axis=1)[:, np.newaxis]
 
-    p_traj = np.vstack(
-        [xref(s).full().flatten(), yref(s).full().flatten(), zref(s).full().flatten()]
-    ).T
+    e2 = np.cross(tan, e1)
 
-    corridor_pts = compute_corridor_fs(p_traj, ns, bs, radius=radius, n_points=len(s))
+    n_angles = 50
+    angles = np.linspace(0, 2 * np.pi, n_angles)
 
-    for circle in corridor_pts:
-        ax.plot(circle[:, 0], circle[:, 1], circle[:, 2], color=color, alpha=alpha)
+    ellipse_pts_world = []
 
-    vec_scale = radius * 0.25
-    for i in range(len(ns)):  # plot fewer arrows for clarity
-        p = p_traj[i]
-        n_vec = ns[i] * vec_scale
-        b_vec = bs[i] * vec_scale
-        t_vec = ts[i] * vec_scale
-        if show_vectors:
-            ax.quiver(
-                p[0],
-                p[1],
-                p[2],
-                n_vec[0],
-                n_vec[1],
-                n_vec[2],
-                color="r",
-                length=1.0,
-                normalize=True,
-            )
-            ax.quiver(
-                p[0],
-                p[1],
-                p[2],
-                b_vec[0],
-                b_vec[1],
-                b_vec[2],
-                color="b",
-                length=1.0,
-                normalize=True,
-            )
-            ax.quiver(
-                p[0],
-                p[1],
-                p[2],
-                t_vec[0],
-                t_vec[1],
-                t_vec[2],
-                color="g",
-                length=1.0,
-                normalize=True,
+    for i in range(0, n_sweep, 5):
+        P_eval[i] = np.array([[a_sweep[i], 0], [0, b_sweep[i]]])
+        pp_eval[i] = np.array([c_sweep[i], d_sweep[i]])
+        pc, width, height, angle = get_ellipse_parameters(P=P_eval[i], pp=pp_eval[i])
+
+        ellipse_params = np.array([width, height, angle, pc[0], pc[1]])
+        for j in range(n_angles):
+            ellipse_pts = get_ellipse_points(
+                width=ellipse_params[0],
+                height=ellipse_params[1],
+                angle=ellipse_params[2],
+                theta=angles[j]
             )
 
+            ind = np.argmin(np.abs(s_sweep - xi_eval[i] * L_path))
+            w = ellipse_pts[:] + ellipse_params[-2:]
+            ellipse_pts_world.append(traj[ind] + w[0] * e1[ind] + w[1] * e2[ind])
+
+
+    all_pts = np.array(ellipse_pts_world)
+    return all_pts
+    # ax.scatter(all_pts[:,0], all_pts[:,1], all_pts[:,2], alpha=alpha, s=5)
 
 def action_unnormalize(val, min, max):
     return (val + 1.0) * (max - min) / 2.0 + min

@@ -12,8 +12,8 @@ def create_interp(name, knots, coeffs):
 
 class SysDyn:
 
-    def __init__(self):
-        pass
+    def __init__(self, tube_degree):
+        self.tube_degree = tube_degree
 
     def setup(self):
 
@@ -105,13 +105,6 @@ class SysDyn:
         e1z_coeff = ca.MX.sym("e1z_coeffs", n_knots)
         e1z_func = create_interp("interp_e1z", arc_len_knots, e1z_coeff)
 
-        e2x_coeff = ca.MX.sym("e2x_coeffs", n_knots)
-        e2x_func = create_interp("interp_e2x", arc_len_knots, e2x_coeff)
-        e2y_coeff = ca.MX.sym("e2y_coeffs", n_knots)
-        e2y_func = create_interp("interp_e2y", arc_len_knots, e2y_coeff)
-        e2z_coeff = ca.MX.sym("e2z_coeffs", n_knots)
-        e2z_func = create_interp("interp_e2z", arc_len_knots, e2z_coeff)
-
         vx_coeff = ca.MX.sym("vx_coeffs", n_knots)
         vxr_func = create_interp("interp_vx", arc_len_knots, vx_coeff)
         vy_coeff = ca.MX.sym("vy_coeffs", n_knots)
@@ -119,11 +112,36 @@ class SysDyn:
         vz_coeff = ca.MX.sym("vz_coeffs", n_knots)
         vzr_func = create_interp("interp_vz", arc_len_knots, vz_coeff)
 
+        e_axis_a_coeff = ca.MX.sym("e_axis_a_coeff", self.tube_degree + 1)
+        e_axis_b_coeff = ca.MX.sym("e_axis_b_coeff", self.tube_degree + 1)
+        e_offset_a_coeff = ca.MX.sym("e_offset_a_coeff", self.tube_degree + 1)
+        e_offset_b_coeff = ca.MX.sym("e_offset_b_coeff", self.tube_degree + 1)
+
+
         s_norm = s / L_path
         xr = xr_func(s_norm, x_coeff)
         yr = yr_func(s_norm, y_coeff)
         zr = zr_func(s_norm, z_coeff)
         pr = ca.vertcat(xr, yr, zr)
+
+        n_terms = self.tube_degree + 1
+        T = casadi_chebyshev_basis(s_norm, self.tube_degree)
+        e_axis_a = sum(e_axis_a_coeff[i] * T[i] for i in range(n_terms))
+        e_axis_b = sum(e_axis_b_coeff[i] * T[i] for i in range(n_terms))
+        e_offset_a = sum(e_offset_a_coeff[i] * T[i] for i in range(n_terms))
+        e_offset_b = sum(e_offset_b_coeff[i] * T[i] for i in range(n_terms))
+        # e_axis_a = 0
+        # e_axis_b = 0
+        # e_offset_a = 0
+        # e_offset_b = 0
+        # for i in range(self.tube_degree + 1):
+        #     # chebyshev basis...
+        #     basis_i = ca.cos(i * ca.acos(2 * s_norm - 1))
+        #     e_axis_a = e_axis_a + e_axis_a_coeff[i] * basis_i
+        #     e_axis_b = e_axis_b + e_axis_b_coeff[i] * basis_i
+        #     e_offset_a = e_offset_a + e_offset_a_coeff[i] * basis_i
+        #     e_offset_b = e_offset_b + e_offset_b_coeff[i] * basis_i
+
 
         xr_dot = vxr_func(s_norm, vx_coeff)
         yr_dot = vyr_func(s_norm, vy_coeff)
@@ -162,11 +180,6 @@ class SysDyn:
         e1_raw = ca.vertcat(e1x, e1y, e1z)
         e1 = e1_raw / (ca.norm_2(e1_raw) + 1e-8)
 
-        # e2x = e2x_func(s_norm, e2x_coeff)
-        # e2y = e2y_func(s_norm, e2y_coeff)
-        # e2z = e2z_func(s_norm, e2z_coeff)
-        # e2_raw = ca.vertcat(e2x, e2y, e2z)
-        # e2 = e2_raw / (ca.norm_2(e2_raw) + 1e-8)
         e2 = ca.cross(tr, e1)
 
         b1 = ca.dot(e1, e_tot)
@@ -190,9 +203,30 @@ class SysDyn:
         alignment = ca.dot(e_perp, v)
 
         radius = 1.0
-        # cbf = radius - dist_to_path
-        # cbf = radius**2 - ca.dot(e_perp, e_perp) - 2 * .05 * ca.dot(e_perp, v_perp)
-        cbf = radius**2 - ca.dot(e_perp, e_perp) - 0.05 * alignment
+        # cbf = radius**2 - ca.dot(e_perp, e_perp) - 0.05 * alignment
+        err_e1 = ca.dot(e_tot, e1)
+        err_e2 = ca.dot(e_tot, e2)
+        # err_rmf = ca.vertcat(err_e1, err_e2)
+
+        E = ca.vertcat(
+            ca.horzcat(e_axis_a, 0),
+            ca.horzcat(0, e_axis_b)
+        )
+
+        # ellipse_center = ca.vertcat(e_offset_a, e_offset_b)
+
+
+        # cbf = 1 - (ellipse_center - err_rmf).T @ E @ (ellipse_center - err_rmf)
+        cx = -e_offset_a / (2 * e_axis_a)
+        cy = -e_offset_b / (2 * e_axis_b)
+        w1_shifted = err_e1 - cx
+        w2_shifted = err_e2 - cy
+
+        cbf = 1 - (e_axis_a * w1_shifted**2 + e_axis_b * w2_shifted**2)
+        # cbf = 1 - (e_axis_a * err_e1**2 + 
+        #            e_axis_b * err_e2**2 + 
+        #            e_offset_a * err_e1 + 
+        #            e_offset_b * err_e2)
 
         # perp_dir = e_perp / (
         #     ca.norm_2(e_perp) + 1e-8
@@ -244,10 +278,10 @@ class SysDyn:
         # cbf = h * ca.exp(-p)
 
         z_b = Rq[:, 2]
-        f_danger = 0.05 * ca.dot(e_perp, v) + 0.1 * ca.dot(e_perp, z_b)
+        f_danger = 0.5 * ca.dot(e_perp, v) + 0.1 * ca.dot(e_perp, z_b)
 
-        h_pos = radius**2 - ca.dot(e_perp, e_perp)
-        cbf = h_pos * ca.exp(-f_danger)
+        # h_pos = radius**2 - ca.dot(e_perp, e_perp)
+        # cbf = h_pos * ca.exp(-f_danger)
         # cbf = h_pos / (1.0 + f_danger**2)
 
         grad_h = ca.jacobian(cbf, x)
@@ -256,27 +290,24 @@ class SysDyn:
         grad_Lfh = ca.jacobian(Lfh, x)
         Lf2h = grad_Lfh @ F
         LgLfh = grad_Lfh @ G
+        hddot = Lf2h + LgLfh @ u
+
+        # a_des = (thrust / mq) * Rq[:, 2] - ca.vertcat(0, 0, 9.81)
+
+        # Lfh = ca.jacobian(cbf, pos) @ v
+        # Lf2h = ca.jacobian(Lfh, pos) @ v + ca.jacobian(Lfh, v) @ a_des
+        # LgLfh_a = ca.jacobian(Lfh, v)
+        # hddot = Lf2h + LgLfh_a @ a_des
+
+        # cbf_cons = Lf2h + LgLfh_a @ a_des + 1 * Lfh + 1 * cbf
 
         alpha0 = ca.MX.sym("alpha0")
         alpha1 = ca.MX.sym("alpha1")
+        cbf_cons = Lf2h + LgLfh @ u + alpha1 * Lfh + alpha0 * cbf
 
-        hddot = Lf2h + LgLfh @ u
-        # cbf_cons = hddot + alpha1 * Lfh + alpha0 * cbf
-        cbf_cons = Lfh + Lgh @ u + alpha0 * cbf
 
-        # control lyap
-        # tr_dot = ca.jacobian(tr, s) * s_dot
-        # e_tot_dot = v - ca.jacobian(pr, s) * s_dot  # ṗ - ṗ_ref
-        # e_l_dot = ca.dot(tr_dot, e_tot) + ca.dot(tr, e_tot_dot)
-        #
-        # lambda_lag = 1  # Tunable parameter
-        # V_lag = 0.5 * (e_l + lambda_lag * e_l_dot) ** 2
-        #
-        # gamma_lag = 50  # Tunable parameter
-        # grad_V_lag = ca.jacobian(V_lag, x)
-        # V_lag_dot = grad_V_lag @ F + grad_V_lag @ G @ u
-        #
-        # clf_cons = V_lag_dot + gamma_lag * V_lag
+        # cbf_cons = hddot + 10 * Lfh + 0.02 * cbf
+        # cbf_cons = Lfh + Lgh @ u + alpha0 * cbf
 
         p = ca.vertcat(
             x_coeff,
@@ -288,18 +319,19 @@ class SysDyn:
             e1x_coeff,
             e1y_coeff,
             e1z_coeff,
-            e2x_coeff,
-            e2y_coeff,
-            e2z_coeff,
+            e_axis_a_coeff,
+            e_axis_b_coeff,
+            e_offset_a_coeff,
+            e_offset_b_coeff,
+            L_path,
             Q_c,
             Q_l,
             Q_t,
             Q_w,
             Q_sdd,
             Q_s,
-            L_path,
             alpha0,
-            # alpha1,
+            alpha1,
         )
 
         s_cons = s - L_path
@@ -316,14 +348,23 @@ class SysDyn:
                 e1x_coeff,
                 e1y_coeff,
                 e1z_coeff,
-                e2x_coeff,
-                e2y_coeff,
-                e2z_coeff,
+                e_axis_a_coeff,
+                e_axis_b_coeff,
+                e_offset_a_coeff,
+                e_offset_b_coeff,
                 L_path,
+                Q_c,
+                Q_l,
+                Q_t,
+                Q_w,
+                Q_sdd,
+                Q_s,
+                alpha0,
+                alpha1,
                 x,
                 u,
             ],
-            [hddot, Lfh, cbf, Lgh],
+            [hddot, Lfh, cbf],
             [
                 "x_c",
                 "y_c",
@@ -334,14 +375,23 @@ class SysDyn:
                 "e1x_c",
                 "e1y_c",
                 "e1z_c",
-                "e2x_c",
-                "e2y_c",
-                "e2z_c",
+                "e_axis_a_coeff",
+                "e_axis_b_coeff",
+                "e_offset_a_coeff",
+                "e_offset_b_coeff",
                 "L",
+                "Q_c",
+                "Q_l",
+                "Q_t",
+                "Q_w",
+                "Q_sdd",
+                "Q_s",
+                "alpha0",
+                "alpha1",
                 "x_val",
                 "u",
             ],
-            ["hddot", "Lfh", "cbf", "LgLfh"],
+            ["hddot", "Lfh", "cbf"],
         )
 
         model = AcadosModel()

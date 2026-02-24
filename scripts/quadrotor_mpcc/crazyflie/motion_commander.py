@@ -12,7 +12,7 @@ from cflib.utils import uri_helper
 from cflib.utils.reset_estimator import reset_estimator
 
 # URI to the Crazyflie to connect to
-uri = uri_helper.uri_from_env(default='radio://0/40/2M/E7E7E7E70A')
+uri = uri_helper.uri_from_env(default='radio://0/80/2M/A5A5A5A5A5')
 
 # The host name or ip address of the mocap system
 host_name = '192.168.8.17'
@@ -22,7 +22,7 @@ host_name = '192.168.8.17'
 mocap_system_type = 'vicon'
 
 # The name of the rigid body that represents the Crazyflie
-rigid_body_name = 'nick_cf'
+rigid_body_name = 'cf80'
 
 # True: send position and orientation; False: send position only
 send_full_pose = True
@@ -77,14 +77,30 @@ def activate_kalman_estimator(cf):
 def activate_mellinger_controller(cf):
     cf.param.set_value('stabilizer.controller', '2')
 
-def run_sequence(cf):
-    commander = cf.high_level_commander
-
-    commander.takeoff(1.0, 2.0)
-    time.sleep(3.0)
-    commander.land(0.0, 2.0)
-    time.sleep(2)
-    commander.stop()
+# def run_sequence(cf):
+#     commander = cf.high_level_commander
+#     ll_commander = cf.commander
+#
+#     commander.takeoff(1.0, 3.0)
+#     time.sleep(5)
+#
+#     for _ in range(20):
+#         ll_commander.send_velocity_world_setpoint(0.0, 0.0, 0.5, 0.0)
+#         time.sleep(0.1)
+#
+#     # 2. Forward Flight Loop (5 seconds at 0.2 m/s)
+#     for _ in range(50):
+#         ll_commander.send_velocity_world_setpoint(0.2, 0.0, 0.0, 0.0)
+#         time.sleep(0.1)
+#
+#     # 3. Descent Loop
+#     for _ in range(50):
+#         ll_commander.send_velocity_world_setpoint(0.0, 0.0, -0.2, 0.0)
+#         time.sleep(0.1)
+#
+#     # commander.land(0.0, 5.0)
+#     time.sleep(5)
+    # ll_commander.stop()
 
 
 if __name__ == '__main__':

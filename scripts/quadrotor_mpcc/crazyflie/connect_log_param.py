@@ -13,7 +13,7 @@ from cflib.crazyflie.log import LogConfig
 from cflib.crazyflie.syncLogger import SyncLogger
 
 # URI to the Crazyflie to connect to
-uri = uri_helper.uri_from_env(default='radio://0/40/2M/E7E7E7E70A')
+uri = uri_helper.uri_from_env(default='radio://0/80/2M/A5A5A5A5A5')
 # Only output errors from the logging framework
 logging.basicConfig(level=logging.ERROR)
 
@@ -23,13 +23,12 @@ def simple_connect():
     time.sleep(3)
     print("Now I will disconnect :'(")
 
-def simple_log_async(scf, logconf):
+def simple_log_async_setup(scf, logconf):
     cf = scf.cf
     cf.log.add_config(logconf)
     logconf.data_received_cb.add_callback(log_stab_callback)
 
-    logconf.start()
-    time.sleep(5)
+def simple_log_async_stop(scf, logconf):
     logconf.stop()
 
 def log_stab_callback(timestamp, data, logconf):
@@ -61,9 +60,10 @@ def simple_log(scf, logconf):
             data = log_entry[1]
             logconf_name = log_entry[2]
 
-            print('[%d][%s]: %s' % (timestamp, logconf_name, data))
+            return data
+            # print('[%d][%s]: %s' % (timestamp, logconf_name, data))
 
-            break
+            # break
 
 if __name__ == '__main__':
     # Initialize the low-level drivers

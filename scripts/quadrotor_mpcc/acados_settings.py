@@ -14,13 +14,13 @@ from mpl_toolkits.mplot3d import Axes3D
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosSimSolver, ACADOS_INFTY
 
 
-def create_ocp():
+def create_ocp(tube_degree):
 
     ocp = AcadosOcp()
 
     # set model
     # model = export_mpcc_ode_model(list(ss), list(xs), list(ys))
-    dynamics = SysDyn()
+    dynamics = SysDyn(tube_degree)
     [model, cbf_func] = dynamics.setup()
     ocp.model = model
 
