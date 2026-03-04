@@ -8,8 +8,7 @@ from mpc_env import VolaDroneEnv
 def collect_normalization_statistics(
     track="7gates", num_episodes=10, steps_per_episode=200
 ):
-    ocp, cbf_func = create_ocp()
-    env = VolaDroneEnv(ocp, track, cbf_func=cbf_func, normalize_obs=False)
+    env = VolaDroneEnv(track, normalize_obs=False)
 
     obs_buffer = []
 
@@ -22,7 +21,7 @@ def collect_normalization_statistics(
             # Random actions
             obs, reward, done, truncated, info = env.step()
 
-            if done or truncated:
+            if done:
                 break
 
             obs_buffer.append(obs)
@@ -51,7 +50,8 @@ def collect_normalization_statistics(
 
 
 if __name__ == "__main__":
-    track = "race_uzh_19g"
+    # track = "race_uzh_19g"
+    track = "straight_line"
     collect_normalization_statistics(
         track=track, num_episodes=10, steps_per_episode=500
     )

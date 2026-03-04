@@ -10,15 +10,13 @@ from acados_settings import create_ocp
 from acados_template import AcadosOcpSolver, AcadosSimSolver
 
 
-ocp, cbf_func = create_ocp()
-solver = AcadosOcpSolver(ocp)
-integrator = AcadosSimSolver(ocp)
+# ocp, cbf_func = create_ocp()
+# solver = AcadosOcpSolver(ocp)
+# integrator = AcadosSimSolver(ocp)
 
 
 def make_env():
-    env = VolaDroneEnv(
-        ocp, "race_uzh_19g", solver=solver, integrator=integrator, cbf_func=cbf_func
-    )
+    env = VolaDroneEnv("straight_line")
     env = Monitor(env)  # logs episode rewards
     return env
 

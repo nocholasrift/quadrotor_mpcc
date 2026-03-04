@@ -9,18 +9,14 @@ from mpc_env import VolaDroneEnv  # adjust import
 from acados_settings import create_ocp
 from acados_template import AcadosOcpSolver, AcadosSimSolver
 
-ocp, cbf_func = create_ocp()
-solver = AcadosOcpSolver(ocp)
-integrator = AcadosSimSolver(ocp)
+# ocp, cbf_func = create_ocp()
+# solver = AcadosOcpSolver(ocp)
+# integrator = AcadosSimSolver(ocp)
 
 
 def make_env():
     env = VolaDroneEnv(
-        ocp,
-        "12gates",
-        solver=solver,
-        integrator=integrator,
-        cbf_func=cbf_func,
+        "straight_line",
         render_mode="human",
     )
     env = Monitor(env)  # logs episode rewards
@@ -38,7 +34,7 @@ env = make_env()  # DummyVecEnv([make_env])
 # --------------------------------------------------
 # 2. Load trained model
 # --------------------------------------------------
-model = SAC.load("race_uzh_19g")  # your saved model name
+model = SAC.load("straight_line")  # your saved model name
 
 # --------------------------------------------------
 # 3. Run one episode
