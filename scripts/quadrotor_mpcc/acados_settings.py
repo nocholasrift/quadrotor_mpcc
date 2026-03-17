@@ -24,11 +24,11 @@ def create_ocp(tube_degree):
     [model, cbf_func] = dynamics.setup()
     ocp.model = model
 
-    Tf = 1.0
+    # Tf = 2.5
+    # N = 40
     nx = model.x.rows()
     nu = model.u.rows()
     nparams = model.p.rows()
-    N = 20
 
     ocp.cost.cost_type = "EXTERNAL"
     ocp.cost.cost_type_e = "EXTERNAL"
@@ -42,8 +42,8 @@ def create_ocp(tube_degree):
 
     # con_lower_bounds = np.array([-ACADOS_INFTY, -ACADOS_INFTY, -ACADOS_INFTY])
     # con_upper_bounds = np.array([0, ACADOS_INFTY, 0])
-    con_lower_bounds = np.array([0, -ACADOS_INFTY])
-    con_upper_bounds = np.array([ACADOS_INFTY, 0])
+    con_lower_bounds = np.array([0, 0])
+    con_upper_bounds = np.array([ACADOS_INFTY, 1])
     # con_lower_bounds = np.array([-ACADOS_INFTY])
     # con_upper_bounds = np.array([0])
 
@@ -91,9 +91,24 @@ def create_ocp(tube_degree):
     # ocp.cost.zl = grad_cost * np.ones((num_cbfs,))
     # ocp.cost.zu = grad_cost * np.ones((num_cbfs,))
     #
+
+    # input constraints
     ocp.constraints.lbu = np.array([0.01, -7.0, -7.0, -4.5, 0])
     ocp.constraints.ubu = np.array([0.40, 7.0, 7.0, 4.5, 3.0])
     ocp.constraints.idxbu = np.array([0, 1, 2, 3, 4])
+
+    # state constraints
+    ocp.constraints.lbx_0 = np.array([-max_vel, -max_vel, -max_vel, 0.0])
+    ocp.constraints.ubx_0 = np.array([max_vel, max_vel, max_vel, max_s_dot])
+    ocp.constraints.idxbx_0 = np.array([3, 4, 5, 11])
+
+    ocp.constraints.lbx = np.array([-max_vel, -max_vel, -max_vel, 0.0])
+    ocp.constraints.ubx = np.array([max_vel, max_vel, max_vel, max_s_dot])
+    ocp.constraints.idxbx = np.array([3, 4, 5, 11])
+
+    ocp.constraints.lbx_e = np.array([-max_vel, -max_vel, -max_vel, 0.0])
+    ocp.constraints.ubx_e = np.array([max_vel, max_vel, max_vel, max_s_dot])
+    ocp.constraints.idxbx_e = np.array([3, 4, 5, 11])
 
     ocp.constraints.x0 = np.zeros(nx)
     ocp.constraints.x0[6] = 1

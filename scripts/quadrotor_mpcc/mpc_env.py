@@ -34,11 +34,11 @@ class VolaDroneEnv(gym.Env):
         self.should_normalize_obs = normalize_obs
 
         self.alpha0 = 1.0
-        self.alpha1 = 1.0
+        self.alpha1 = 10.0
 
         # Load Track metadata
         self.track = track
-        self.track_data = self._setup_track(track)
+        self.track_data = setup_track(track)
         x = self.track_data["x"]
         y = self.track_data["y"]
         z = self.track_data["z"]
@@ -46,12 +46,12 @@ class VolaDroneEnv(gym.Env):
         traj = np.stack([x, y, z], axis=1)
 
         self.track_kdtree = cKDTree(traj)
-        self.track_horizon_window = 4.0
         self.max_tube_radius = 1.0
         self.tube_degree = 5
         self.tube_coeffs = np.zeros((4, self.tube_degree + 1))
 
         self.prev_s = 0
+        self.step_count = 0
 
         self.render_mode = render_mode
         self.state = None
@@ -62,20 +62,21 @@ class VolaDroneEnv(gym.Env):
         self.n_consecutive_infeasibilities = 0
 
         if self.should_normalize_obs:
-            stats = np.load(f"stats/{track}_normalization_stats.npz")
+            # stats = np.load(f"stats/{track}_normalization_stats.npz")
+            stats = np.load(f"stats/straight_line_normalization_stats.npz")
             self.obs_mean = stats["obs_mean"]
             self.obs_std = stats["obs_std"]
 
         ocp, self.cbf_func = create_ocp(self.tube_degree)
         if not solver:
-            self.solver = AcadosOcpSolver(ocp, build=False, generate=False)
-            # self.solver = AcadosOcpSolver(ocp)
+            # self.solver = AcadosOcpSolver(ocp, build=False, generate=False)
+            self.solver = AcadosOcpSolver(ocp)
         else:
             self.solver = solver
 
         if not integrator:
-            self.integrator = AcadosSimSolver(ocp, build=False, generate=False)
-            # self.integrator = AcadosSimSolver(ocp)
+            # self.integrator = AcadosSimSolver(ocp, build=False, generate=False)
+            self.integrator = AcadosSimSolver(ocp)
         else:
             self.integrator = integrator
 
@@ -83,6 +84,10 @@ class VolaDroneEnv(gym.Env):
         self.M = 3
         self.nx = ocp.model.x.rows()  # [px, py, pz, vx, vy, vz, ax, ay, az, s, s_dot]
         self.nu = ocp.model.u.rows()  # [jx, jy, jz, s_ddot]
+
+        # 20% buffer on as far as robot can travel in horizon time
+        self.track_horizon_window = max_s_dot * Tf * 1.2
+        # exit(0)
 
         self.observation_space = spaces.Box(
             low=-np.inf,
@@ -95,32 +100,6 @@ class VolaDroneEnv(gym.Env):
 
         # self.reset()
 
-    def _setup_track(self, track):
-        [s, x, y, z, vx, vy, vz] = getTrack(track)
-        (
-            vxref,
-            vyref,
-            vzref,
-        ) = interpolLUT(vx, vy, vz, s)
-        T, e1, e2 = getRMFBasis(vxref, vyref, vzref, s)
-
-        n = int(s[-1] * 10)
-        return {
-            "s": resample_path(s, n),
-            "x": resample_path(x, n),
-            "y": resample_path(y, n),
-            "z": resample_path(z, n),
-            "vx": resample_path(vx, n),
-            "vy": resample_path(vy, n),
-            "vz": resample_path(vz, n),
-            "e1x": resample_path(e1[:, 0], n),
-            "e1y": resample_path(e1[:, 1], n),
-            "e1z": resample_path(e1[:, 2], n),
-            "e2x": resample_path(e2[:, 0], n),
-            "e2y": resample_path(e2[:, 1], n),
-            "e2z": resample_path(e2[:, 2], n),
-            "L": s[-1],
-        }
 
     def _setup_gates(self, track):
         return load_gates(track)
@@ -150,7 +129,7 @@ class VolaDroneEnv(gym.Env):
                 self.solver.set(stage, "u", np.zeros(self.nu))
 
         self.params = np.array(
-            [3.0, 400.0, 1, 5.0, 1.0, 0.3],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
+            [10.0, 100.0, 1, 5.0, 1.0, 1.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
         )
 
         self.tube_coeffs = get_free_tube(self.tube_degree, self.max_tube_radius)
@@ -161,9 +140,95 @@ class VolaDroneEnv(gym.Env):
         local_p = build_acados_params(local_window, self.params, self.tube_coeffs)
         return self._get_obs(local_p, 0), {}
 
+    def _warm_start(self, local_p):
+        prev_x = [self.solver.get(i, "x") for i in range(self.N + 1)]
+        prev_u = [self.solver.get(i, "u") for i in range(self.N)]
+
+        ds = prev_x[1][10] 
+
+        # x0 --> u0 --> x1 --> u1 --> x2
+        # N = 2
+        # x'0 = x1
+        # u'0 = u1
+        # x'1 = x2
+        # u'1 = u1 (repeat)
+        # x'2 = f(x2, u1)
+        for i in range(self.N-1):
+            # Move stage i+1 to stage i
+            new_x = prev_x[i+1].copy()
+            # new_x[10] -= ds
+            # new_x[6:10] /= np.linalg.norm(new_x[6:10])
+            # For U, we move stage i+1 to i. 
+            # Note: for the last U (at N-1), we usually duplicate the previous last U
+            new_u = prev_u[i+1] # if (i+1) < self.N else prev_u[self.N-1]
+            
+            self.solver.set(i, "x", new_x)
+            self.solver.set(i, "u", new_u)
+
+            # print(i, new_x[10])
+
+            # if np.abs(1.0 - np.linalg.norm(new_x[6:10])) > 1e-3:
+            #     print("quaternion violated:\t", new_x[6:10])
+            #     print("norm:", np.linalg.norm(new_x[6:10]))
+
+        x_Nm1_shifted = prev_x[-1].copy()
+        # x_Nm1_shifted[10] -= ds
+        u_Nm1 = prev_u[-1]
+
+        self.solver.set(self.N-1, "x", x_Nm1_shifted)
+        self.solver.set(self.N-1, "u", u_Nm1)
+
+        # print(i+1, x_Nm1_shifted[10])
+
+        # self.solver.set(self.N-1, "x", prev_x[])
+        # x_Nm1_shifted = self.solver.get(self.N-1, "x")
+        # u_Nm1_shifted = self.solver.get(self.N-1, "u")
+
+        self.integrator.set("x", x_Nm1_shifted)
+        self.integrator.set("u", u_Nm1)
+        self.integrator.set("p", local_p)
+        self.integrator.solve()
+
+        x_N_warm = self.integrator.get("x")
+        self.solver.set(self.N, "x", x_N_warm)
+        # print(i+2, x_N_warm[10])
+        # print("v_N", x_N_warm[3:6])
+
+        # Save solution BEFORE shifting (equivalent to _prev_x0, _prev_u0)
+        # prev_x = [self.solver.get(stage, "x") for stage in range(self.N + 1)]
+        # prev_u = [self.solver.get(stage, "u") for stage in range(self.N)]
+        #
+        # starting_s = prev_x[1][10]  # s at stage 1 becomes new stage 0
+        #
+        # # Shift: stage k gets previous stage k+1
+        # for stage in range(1, self.N):
+        #     warm_x = prev_x[stage].copy()
+        #     warm_x[10] -= starting_s
+        #     self.solver.set(stage-1, "x", warm_x)
+        #     self.solver.set(stage-1, "u", prev_u[stage])
+        #
+        # # Propagate terminal state (stage N+1 doesn't exist in acados,
+        # # but we integrate to get a good x[N])
+        # x_Nm1 = prev_x[self.N].copy()
+        # x_Nm1[10] -= starting_s
+        # u_Nm1 = prev_u[self.N-1]
+        # self.solver.set(self.N-1, "x", x_Nm1)
+        # self.solver.set(self.N-1, "u", u_Nm1)
+        #
+        # self.integrator.set("x", x_Nm1)
+        # self.integrator.set("u", u_Nm1)
+        # self.integrator.set("p", local_p)
+        # self.integrator.solve()
+        # x_N_new = self.integrator.get("x")
+        # print("x_N-1", x_Nm1)
+        # print("\n")
+        # print("x_N", x_N_new)
+        # self.solver.set(self.N, "x", x_N_new)
+
+
     def step(self, action=None):
         s_global_now = self.state[10]
-        self.prev_s = s_global_now
+        self.prev_s = s_global_now - 0.1
         local_window = get_local_window_params(
             self.track_data,
             s_global_now,
@@ -181,6 +246,7 @@ class VolaDroneEnv(gym.Env):
 
         start = time.time()
 
+        occ_data = []
         if len(self.pcl) > 0:
             occ_data = project_cloud_to_parametric_path(
                 self.pcl,
@@ -188,6 +254,7 @@ class VolaDroneEnv(gym.Env):
                 self.track_kdtree,
                 max_radius=self.max_tube_radius,
             )
+        if len(occ_data) > 0:
             occ_data[:, 0] -= s_global_now
             mask = (occ_data[:, 0] >= 0) & (occ_data[:, 0] <= local_window["L"])
             occ_data = occ_data[mask]
@@ -212,29 +279,47 @@ class VolaDroneEnv(gym.Env):
         # print(self.tube_coeffs)
 
         param_dict = build_acados_params(local_window, self.params, self.tube_coeffs)
+        # print("param dict:\n", param_dict)
         alphas = np.array([self.alpha0, self.alpha1]).reshape((2,))
 
         local_p = dict_to_list(param_dict)
         local_p = np.concatenate([local_p, alphas])
 
         local_state = self.state.copy()
-        local_state[10] = 0.0
+        # local_state[10] = 0.0
+        local_state[10] = max(param_dict["s_start"][0] + 1e-3, local_state[10])
 
-        # Set integrator inputs
+
+        if self.step_count != 0:
+            self._warm_start(local_p)
+
+        # Set parameters and pin initial state
+        # print("s_start", param_dict["s_start"])
+        # print("state s", local_state[10])
+        for stage in range(self.N + 1):
+            self.solver.set(stage, "p", local_p)
+
+        # Set inputs
         self.solver.set(0, "lbx", local_state)
         self.solver.set(0, "ubx", local_state)
+        # print("window:", self.track_horizon_window)
+        # print("true x0", local_state)
 
-        for stage in range(self.N + 1):
-            # self.solver.set(stage, "p", self.params)
-            self.solver.set(stage, "p", local_p)
-            if stage < self.N:
-                prev_x = self.solver.get(stage + 1, "x")
-                # We must subtract the progress made in the last step
-                # to keep the horizon consistent with s=0 at start
-                prev_x[10] -= (
-                    next_s_from_prev_step if "next_s_from_prev_step" in locals() else 0
-                )
-                self.solver.set(stage, "x", prev_x)
+        # for stage in range(self.N + 1):
+        #     # self.solver.set(stage, "p", self.params)
+        #     self.solver.set(stage, "p", local_p)
+        #     start_s = 0
+        #     if stage < self.N:
+        #         prev_x = self.solver.get(stage + 1, "x")
+        #         if stage == 0:
+        #             start_s = prev_x[10]
+        #         # We must subtract the progress made in the last step
+        #         # to keep the horizon consistent with s=0 at start
+        #         prev_x[10] -= start_s
+        #         # prev_x[10] -= (
+        #         #     next_s_from_prev_step if "next_s_from_prev_step" in locals() else 0
+        #         # )
+        #         self.solver.set(stage, "x", prev_x)
 
         # pad_amt = max_occ_points - occ_data.shape[0]
         # pad_val = [0, 10, 10]
@@ -244,7 +329,7 @@ class VolaDroneEnv(gym.Env):
         start = time.time()
         status = self.solver.solve()
 
-        # print("solve time:", time.time() - start)
+        print("solve time:", time.time() - start)
 
         next_local_state = self.solver.get(1, "x")
         q_norm = np.linalg.norm(next_local_state[6:10])
@@ -252,7 +337,11 @@ class VolaDroneEnv(gym.Env):
 
         global_s_next = s_global_now + next_local_state[10]
         self.state = next_local_state.copy()
-        self.state[10] = global_s_next
+        # self.state[10] = global_s_next
+        # print("xN s:", self.solver.get(self.N, "x")[10])
+        xN = self.solver.get(self.N, "x")
+        print("s_dot", xN[-1])
+        print("delta s", xN[10] - local_state[10])
 
         u = self.solver.get(0, "u")
         gym_obs = self._get_obs(param_dict, global_s_next)
@@ -262,7 +351,8 @@ class VolaDroneEnv(gym.Env):
 
         # Termination: Finished 99% of the track
         terminated = bool(
-            self.state[10] >= self.track_data["L"] - self.track_horizon_window
+            # self.state[10] >= self.track_data["L"] - self.track_horizon_window
+            self.state[10] >= self.track_data["L"] - 0.1
         )
 
         # Truncation: Drone flew way off course (safety check)
@@ -277,6 +367,8 @@ class VolaDroneEnv(gym.Env):
         if self.should_normalize_obs:
             gym_obs = self.normalize_obs(gym_obs, self.obs_mean, self.obs_std)
 
+        self.step_count += 1
+
         # print("norm", gym_obs)
         return gym_obs, reward, terminated, truncated, {}
 
@@ -286,6 +378,7 @@ class VolaDroneEnv(gym.Env):
         M = self.M
 
         inds = np.linspace(1, N - 1, num=M, dtype=int)
+        # inds = [i for i in range(N)]
         obs = []
 
         for i in inds:
@@ -307,6 +400,7 @@ class VolaDroneEnv(gym.Env):
                 local_p["tube_b"],
                 local_p["tube_c"],
                 local_p["tube_d"],
+                local_p["s_start"],
                 local_p["L"],
                 *local_p["global_params"],
                 self.alpha0,
@@ -316,6 +410,10 @@ class VolaDroneEnv(gym.Env):
             )
 
             # print(LgLfh)
+            # print(i, "hddot", hddot)
+            # print(i, "lfh", lfh)
+            # print(i, "cbf", cbf)
+            # print(i, "grad_h", grad_h)
 
             # print(lfh, lgh, u_i)
             # hdot = lfh + lgh @ u_i
@@ -573,6 +671,7 @@ class VolaDroneEnv(gym.Env):
 
 
 def main():
+    # track = "short_line"
     track = "straight_line"
     # track = "7gates"
     # track = "figure8"

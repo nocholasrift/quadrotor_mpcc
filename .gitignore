@@ -1,6 +1,7 @@
 c_generated_code/
 build/
 .cache/
+.DS_Store
 __pycache__
 cache/
 

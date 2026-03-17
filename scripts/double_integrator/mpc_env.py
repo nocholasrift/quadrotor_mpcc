@@ -218,9 +218,9 @@ class VolaDroneEnv(gym.Env):
 
         param_dict = build_acados_params(local_window, self.params, self.tube_coeffs)
 
-        print("s_global:\t", s_global_now)
-        print("s_end:\t", self.track_data["s"][-1])
-        print("L:\t", param_dict["L"])
+        # print("s_global:\t", s_global_now)
+        # print("s_end:\t", self.track_data["s"][-1])
+        # print("L:\t", param_dict["L"])
         # alphas = np.array([self.alpha0, self.alpha1]).reshape((2,))
         #
         # local_p = dict_to_list(param_dict)
@@ -248,7 +248,7 @@ class VolaDroneEnv(gym.Env):
                 # prev_x[s_ind] -= (
                 #     next_s_from_prev_step if "next_s_from_prev_step" in locals() else 0
                 # )
-                print(prev_x[s_ind])
+                # print(prev_x[s_ind])
                 self.solver.set(stage, "x", prev_x)
 
         # pad_amt = max_occ_points - occ_data.shape[0]
@@ -259,7 +259,7 @@ class VolaDroneEnv(gym.Env):
         start = time.time()
         status = self.solver.solve()
 
-        # print("solve time:", time.time() - start)
+        print("solve time:", time.time() - start)
 
         next_local_state = self.solver.get(1, "x")
 
@@ -593,10 +593,10 @@ class VolaDroneEnv(gym.Env):
 def main():
     # track = "straight_line"
     # track = "7gates"
-    track = "figure8"
+    # track = "figure8"
     # track = "knotted_helix"
     # track = "12gates"
-    # track = "race_uzh_19g"
+    track = "race_uzh_19g"
 
     env = VolaDroneEnv(track, render_mode="human", normalize_obs=False)
 

@@ -118,7 +118,9 @@ class SysDyn:
         e_offset_b_coeff = ca.MX.sym("e_offset_b_coeff", self.tube_degree + 1)
 
 
-        s_norm = s / L_path
+        s_start = ca.MX.sym("s_start")
+        s_norm = (s - s_start) / L_path
+        # s_norm = s / L_path
         xr = xr_func(s_norm, x_coeff)
         yr = yr_func(s_norm, y_coeff)
         zr = zr_func(s_norm, z_coeff)
@@ -323,6 +325,7 @@ class SysDyn:
             e_axis_b_coeff,
             e_offset_a_coeff,
             e_offset_b_coeff,
+            s_start,
             L_path,
             Q_c,
             Q_l,
@@ -334,7 +337,7 @@ class SysDyn:
             alpha1,
         )
 
-        s_cons = s - L_path
+        s_cons = s_norm #- L_path
 
         cbf_logic_func = ca.Function(
             "cbf_logic",
@@ -352,6 +355,7 @@ class SysDyn:
                 e_axis_b_coeff,
                 e_offset_a_coeff,
                 e_offset_b_coeff,
+                s_start,
                 L_path,
                 Q_c,
                 Q_l,
@@ -379,6 +383,7 @@ class SysDyn:
                 "e_axis_b_coeff",
                 "e_offset_a_coeff",
                 "e_offset_b_coeff",
+                "s_start",
                 "L",
                 "Q_c",
                 "Q_l",

@@ -22,11 +22,11 @@ def create_ocp(tube_degree):
     model = dynamics.setup()
     ocp.model = model
 
-    Tf = 1.0
+    Tf = 2.0
     nx = model.x.rows()
     nu = model.u.rows()
     nparams = model.p.rows()
-    N = 20
+    N = 40
 
     ocp.cost.cost_type = "EXTERNAL"
     ocp.cost.cost_type_e = "EXTERNAL"

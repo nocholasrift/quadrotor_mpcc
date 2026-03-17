@@ -16,7 +16,7 @@ from acados_template import AcadosOcpSolver, AcadosSimSolver
 
 def make_env():
     env = VolaDroneEnv(
-        "straight_line",
+        "race_uzh_19g",
         render_mode="human",
     )
     env = Monitor(env)  # logs episode rewards

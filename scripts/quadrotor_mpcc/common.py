@@ -61,6 +61,32 @@ def getTrack(track):
 
     return sref, xref, yref, zref, vxref, vyref, vzref
 
+def setup_track(track):
+    [s, x, y, z, vx, vy, vz] = getTrack(track)
+    (
+        vxref,
+        vyref,
+        vzref,
+    ) = interpolLUT(vx, vy, vz, s)
+    T, e1, e2 = getRMFBasis(vxref, vyref, vzref, s)
+
+    n = int(s[-1] * 10)
+    return {
+        "s": resample_path(s, n),
+        "x": resample_path(x, n),
+        "y": resample_path(y, n),
+        "z": resample_path(z, n),
+        "vx": resample_path(vx, n),
+        "vy": resample_path(vy, n),
+        "vz": resample_path(vz, n),
+        "e1x": resample_path(e1[:, 0], n),
+        "e1y": resample_path(e1[:, 1], n),
+        "e1z": resample_path(e1[:, 2], n),
+        "e2x": resample_path(e2[:, 0], n),
+        "e2y": resample_path(e2[:, 1], n),
+        "e2z": resample_path(e2[:, 2], n),
+        "L": s[-1],
+    }
 
 def load_gates(track):
     # Resolve path
@@ -338,7 +364,6 @@ def get_local_window_params(track_data, s_global_now, num_knots, window_dist=4.0
         new_knots[key] = np.interp(s_query, s_orig, track_data[key])
 
     # Construct parameter vector
-    # IMPORTANT: The last parameter is the LENGTH of this local segment
     local_window = {
         "s": s_query,
         "x": new_knots["x"],
@@ -373,6 +398,7 @@ def build_acados_params(local_window, global_params, tube_coeffs):
         "tube_b":       tube_coeffs[1, :],
         "tube_c":       tube_coeffs[2, :],
         "tube_d":       tube_coeffs[3, :],
+        "s_start":      [local_window["s"][0]],
         "L":            np.array([local_window["L"]]),
         "global_params": np.atleast_1d(global_params),
     }
@@ -520,6 +546,12 @@ Ct = 3.25e-4  # [N/krpm^2] Thrust coefficient
 dq = 92e-3  # [m] distance between motors' center
 l = dq / 2  # [m] distance between motors' center and the axis of rotation
 n_knots = 10
+
+max_vel = 1.0
+max_s_dot = 1.0
+
+Tf = 2.5
+N = 40
 
 
 min_alpha = 0.1
