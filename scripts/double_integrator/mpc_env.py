@@ -150,7 +150,7 @@ class VolaDroneEnv(gym.Env):
                 self.solver.set(stage, "u", np.zeros(self.nu))
 
         self.params = np.array(
-            [10.0, 100.0, 0.1, 0.1, 0.1],  # Q_c, Q_l, Q_s, Q_a, Q_sdd
+            [10.0, 100.0, 0.2, 0.1, 0.1],  # Q_c, Q_l, Q_s, Q_a, Q_sdd
         )
 
         self.tube_coeffs = get_free_tube(self.tube_degree, self.max_tube_radius)

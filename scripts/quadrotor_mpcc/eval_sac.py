@@ -14,9 +14,12 @@ from acados_template import AcadosOcpSolver, AcadosSimSolver
 # integrator = AcadosSimSolver(ocp)
 
 
+track = "straight_line"
+
+
 def make_env():
     env = VolaDroneEnv(
-        "race_uzh_19g",
+        track,
         render_mode="human",
     )
     env = Monitor(env)  # logs episode rewards
@@ -34,7 +37,7 @@ env = make_env()  # DummyVecEnv([make_env])
 # --------------------------------------------------
 # 2. Load trained model
 # --------------------------------------------------
-model = SAC.load("straight_line")  # your saved model name
+model = SAC.load(track)  # your saved model name
 
 # --------------------------------------------------
 # 3. Run one episode

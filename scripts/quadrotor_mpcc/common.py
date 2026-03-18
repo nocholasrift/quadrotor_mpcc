@@ -61,6 +61,7 @@ def getTrack(track):
 
     return sref, xref, yref, zref, vxref, vyref, vzref
 
+
 def setup_track(track):
     [s, x, y, z, vx, vy, vz] = getTrack(track)
     (
@@ -87,6 +88,7 @@ def setup_track(track):
         "e2z": resample_path(e2[:, 2], n),
         "L": s[-1],
     }
+
 
 def load_gates(track):
     # Resolve path
@@ -260,6 +262,7 @@ def getFrenSerretBasis(x_func, y_func, z_func, s_vals):
 
     return ts, ns, bs
 
+
 def casadi_chebyshev_basis(xi, degree):
     T = [0] * (degree + 1)
     x = 2 * xi - 1
@@ -269,10 +272,11 @@ def casadi_chebyshev_basis(xi, degree):
 
         T[1] = x
 
-    for k in range(2, degree+1):
-        T[k] = 2 * x * T[k-1] - T[k-2]
+    for k in range(2, degree + 1):
+        T[k] = 2 * x * T[k - 1] - T[k - 2]
 
     return T
+
 
 def getRMFBasis(vx, vy, vz, s):
 
@@ -383,25 +387,27 @@ def get_local_window_params(track_data, s_global_now, num_knots, window_dist=4.0
 
     return local_window
 
+
 def build_acados_params(local_window, global_params, tube_coeffs):
     return {
-        "x":            local_window["x"],
-        "y":            local_window["y"],
-        "z":            local_window["z"],
-        "vx":           local_window["vx"],
-        "vy":           local_window["vy"],
-        "vz":           local_window["vz"],
-        "e1x":          local_window["e1x"],
-        "e1y":          local_window["e1y"],
-        "e1z":          local_window["e1z"],
-        "tube_a":       tube_coeffs[0, :],
-        "tube_b":       tube_coeffs[1, :],
-        "tube_c":       tube_coeffs[2, :],
-        "tube_d":       tube_coeffs[3, :],
-        "s_start":      [local_window["s"][0]],
-        "L":            np.array([local_window["L"]]),
+        "x": local_window["x"],
+        "y": local_window["y"],
+        "z": local_window["z"],
+        "vx": local_window["vx"],
+        "vy": local_window["vy"],
+        "vz": local_window["vz"],
+        "e1x": local_window["e1x"],
+        "e1y": local_window["e1y"],
+        "e1z": local_window["e1z"],
+        "tube_a": tube_coeffs[0, :],
+        "tube_b": tube_coeffs[1, :],
+        "tube_c": tube_coeffs[2, :],
+        "tube_d": tube_coeffs[3, :],
+        "s_start": [local_window["s"][0]],
+        "L": np.array([local_window["L"]]),
         "global_params": np.atleast_1d(global_params),
     }
+
 
 def dict_to_list(d):
     return np.concatenate(list(d.values()))
@@ -443,9 +449,7 @@ def draw_horizon(ax, track_data, state):
     return p, t, e1, e2
 
 
-def get_corridor_pts(
-    ax, track_data, coeffs, alpha=0.2
-):
+def get_corridor_pts(ax, track_data, coeffs, alpha=0.2):
     n_sweep = 100
     xi_eval = np.linspace(0, 1, n_sweep)
     P_eval = np.zeros((n_sweep, 2, 2))
@@ -502,17 +506,17 @@ def get_corridor_pts(
                 width=ellipse_params[0],
                 height=ellipse_params[1],
                 angle=ellipse_params[2],
-                theta=angles[j]
+                theta=angles[j],
             )
 
             ind = np.argmin(np.abs(s_sweep - xi_eval[i] * L_path))
             w = ellipse_pts[:] + ellipse_params[-2:]
             ellipse_pts_world.append(traj[ind] + w[0] * e1[ind] + w[1] * e2[ind])
 
-
     all_pts = np.array(ellipse_pts_world)
     return all_pts
     # ax.scatter(all_pts[:,0], all_pts[:,1], all_pts[:,2], alpha=alpha, s=5)
+
 
 def action_unnormalize(val, min, max):
     return (val + 1.0) * (max - min) / 2.0 + min
@@ -547,8 +551,8 @@ dq = 92e-3  # [m] distance between motors' center
 l = dq / 2  # [m] distance between motors' center and the axis of rotation
 n_knots = 10
 
-max_vel = 1.0
-max_s_dot = 1.0
+max_vel = 2.0
+max_s_dot = 2.0
 
 Tf = 2.5
 N = 40
