@@ -12,8 +12,11 @@ def load_pcl_from_env(yaml_path, samples_per_m2=20):
 
     pcl = []
     for obj in config["obstacles"]:
+        print(obj)
         if obj["type"] == "box":
             mesh = trimesh.creation.box(extents=obj["size"])
+        elif obj["type"] == "sphere":
+            mesh = trimesh.creation.icosphere(subdivisions=3, radius=obj["radius"])
 
         translation = trimesh.transformations.translation_matrix(obj["position"])
         rotation = trimesh.transformations.euler_matrix(*obj["rotation"])

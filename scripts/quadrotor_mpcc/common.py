@@ -563,3 +563,5 @@ max_alpha = 10.0
 
 min_alpha_dot = -3.0
 max_alpha_dot = 3.0
+
+tube_degree = 5

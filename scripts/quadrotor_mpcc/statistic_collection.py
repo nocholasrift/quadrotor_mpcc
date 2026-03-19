@@ -6,25 +6,28 @@ from mpc_env import VolaDroneEnv
 
 
 def collect_normalization_statistics(
-    track="7gates", num_episodes=10, steps_per_episode=200
+    tracks=["7gates"], num_episodes=10, steps_per_episode=1000
 ):
-    env = VolaDroneEnv(track, normalize_obs=False)
 
     obs_buffer = []
 
     print(f"Collecting {num_episodes} episodes of data...")
-    for ep in tqdm(range(num_episodes)):
-        obs, _ = env.reset()
-        obs_buffer.append(obs)
 
-        for step in range(steps_per_episode):
-            # Random actions
-            obs, reward, done, truncated, info = env.step()
+    for track in tracks:
+        env = VolaDroneEnv(track, normalize_obs=False)
 
-            if done:
-                break
-
+        for ep in tqdm(range(num_episodes)):
+            obs, _ = env.reset()
             obs_buffer.append(obs)
+
+            for step in range(steps_per_episode):
+                # Random actions
+                obs, reward, done, truncated, info = env.step()
+
+                if done:
+                    break
+
+                obs_buffer.append(obs)
 
     # Compute statistics
     obs_array = np.array(obs_buffer)
@@ -37,8 +40,9 @@ def collect_normalization_statistics(
     print(f"Std:  {obs_std}")
 
     # Save to file
+    fname_prefix = tracks[0] if len(tracks) == 1 else "all"
     np.savez(
-        f"stats/{track}_normalization_stats.npz",
+        f"stats/{fname_prefix}_normalization_stats.npz",
         obs_mean=obs_mean,
         obs_std=obs_std,
         track=track,
@@ -51,7 +55,7 @@ def collect_normalization_statistics(
 
 if __name__ == "__main__":
     # track = "race_uzh_19g"
-    track = "straight_line"
+    tracks = ["straight_line", "race_uzh_19g"]
     collect_normalization_statistics(
-        track=track, num_episodes=10, steps_per_episode=500
+        tracks=tracks, num_episodes=10, steps_per_episode=500
     )

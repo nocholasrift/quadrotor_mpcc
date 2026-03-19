@@ -1,17 +1,59 @@
-# Define a "library" of reusable shapes at the top
 templates:
-  # - &cube
-  #   type: "box"
-  #   size: [1.0, 1.0, 3.0]
-
   - &pillar
     type: "box"
-    size: [1.0, 1.0, 20.0]
+    size: [0.5, 0.5, 8.0] # Thinner pillars for a sleeker look
+
+  - &crossbar
+    type: "box"
+    size: [6.0, 0.4, 0.4] # Horizontal obstacle
+
+  - &sphere_small
+    type: "sphere"
+    radius: 0.6
+
+  - &boulder
+    type: "sphere"
+    radius: 1.5
 
 obstacles:
+  # 1. THE SLALOM: Near Gates 1, 8, 15 (Position: -1.1, -1.6, 3.6)
+  # Forces the drone to bank hard before hitting the high gate.
   - <<: *pillar
-    position: [9.0, 2.5, 0.0]
-    # position: [20.0, 0, 0.0]
+    position: [-2.5, -1.0, 0.0]
+    rotation: [0, 0, 0]
+  - <<: *pillar
+    position: [0.5, -2.5, 0.0]
     rotation: [0, 0, 0]
 
+  # 2. THE CHOKEPOINT: Between Gate 2 and Gate 3 (Far East side)
+  # Position [9.2, 6.6] to [9.2, -4.0]. 
+  # We'll put a massive "boulder" in the middle of that long leg.
+  - <<: *boulder
+    position: [12.5, 1.0, 1.2]
+    rotation: [0, 0, 0]
+    
+  # 3. THE LOW-CEILING: Near Gates 5, 12, 19 (Position: -4.5, -6.0, 0.8)
+  # A crossbar above the gate to ensure the trajectory stays low.
+  - <<: *crossbar
+    position: [-4.5, -6.0, 2.5] 
+    rotation: [0, 0, 0]
 
+  # 4. THE TURN-INDICATOR: Near Gate 6 (Position: 4.75, -0.9, 1.2)
+  # A sphere placed just inside the turn radius to make the path look intentional.
+  - <<: *sphere_small
+    position: [3.0, -1.5, 1.0]
+    rotation: [0, 0, 0]
+
+  # 5. THE VERTICAL CAGE: Near Gate 4/11/18 (High position: -4.5, -6.0, 3.5)
+  # Pillars on either side of the gate to frame the "jump".
+  - <<: *pillar
+    position: [-6.0, -6.0, 0.0]
+    rotation: [0, 0, 0]
+  - <<: *pillar
+    position: [-3.0, -6.0, 0.0]
+    rotation: [0, 0, 0]
+
+  # 6. CENTRAL OBSTACLE: To break up the "empty" space in the middle of the loop
+  - <<: *pillar
+    position: [2.0, 2.0, 0.0]
+    rotation: [0, 0.3, 0] # Slight tilt for visual flair
