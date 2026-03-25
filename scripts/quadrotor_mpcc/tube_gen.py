@@ -31,6 +31,7 @@ def polynomial(xi, coeffs, degree):
 
     return a, b, c, d
 
+
 def get_cheby_basis(xi_vec, degree):
     # xi_vec shape: (N,) -> Φ shape: (N, degree + 1)
     N = xi_vec.shape[0]
@@ -39,12 +40,14 @@ def get_cheby_basis(xi_vec, degree):
     # Perform basis calculation for all points and all degrees at once
     return np.cos(K * np.arccos(2 * xi_vec[:, np.newaxis] - 1))
 
+
 def get_free_tube(poly_deg, max_radius):
-    coeffs = np.zeros((4, poly_deg+1))
+    coeffs = np.zeros((4, poly_deg + 1))
     coeffs[0, 0] = 1 / max_radius**2
     coeffs[1, 0] = 1 / max_radius**2
 
     return coeffs
+
 
 def NLP(poly_deg, occ_points, traj_len, max_radius, LP):
 
@@ -66,7 +69,7 @@ def NLP(poly_deg, occ_points, traj_len, max_radius, LP):
     b_sweep = Phi_sweep @ b
     c_sweep = Phi_sweep @ c
     d_sweep = Phi_sweep @ d
-    
+
     cost = cp.sum(a_sweep + b_sweep)
     min_bound = 1 / (max_radius**2)
     constraints = [a_sweep >= min_bound, b_sweep >= min_bound]
@@ -87,11 +90,13 @@ def NLP(poly_deg, occ_points, traj_len, max_radius, LP):
 
     # Vectorized ellipse constraint: a*w1^2 + b*w2^2 + c*w1 + d*w2 >= 1
     # We use cp.multiply for element-wise multiplication of expressions
-    occ_expr = (cp.multiply(np.square(w1), a_occ) + 
-                cp.multiply(np.square(w2), b_occ) + 
-                cp.multiply(w1, c_occ) + 
-                cp.multiply(w2, d_occ))
-    # occ_expr = (cp.multiply(np.square(w1), a_occ) + 
+    occ_expr = (
+        cp.multiply(np.square(w1), a_occ)
+        + cp.multiply(np.square(w2), b_occ)
+        + cp.multiply(w1, c_occ)
+        + cp.multiply(w2, d_occ)
+    )
+    # occ_expr = (cp.multiply(np.square(w1), a_occ) +
     #             cp.multiply(np.square(w2), b_occ))
 
     # constraints += [d_occ == 0]
@@ -109,14 +114,18 @@ def NLP(poly_deg, occ_points, traj_len, max_radius, LP):
     return prob, [a, b, c, d]
     # return prob, [a, b]
 
+
 def get_cage(xi_sweep, max_radius):
     n_wrap = len(xi_sweep)
-    top    = np.column_stack([xi_sweep,  max_radius * np.ones(n_wrap),  np.zeros(n_wrap)])
-    bottom = np.column_stack([xi_sweep, -max_radius * np.ones(n_wrap),  np.zeros(n_wrap)])
-    left   = np.column_stack([xi_sweep,  np.zeros(n_wrap),  max_radius * np.ones(n_wrap)])
-    right  = np.column_stack([xi_sweep,  np.zeros(n_wrap), -max_radius * np.ones(n_wrap)])
-    
+    top = np.column_stack([xi_sweep, max_radius * np.ones(n_wrap), np.zeros(n_wrap)])
+    bottom = np.column_stack(
+        [xi_sweep, -max_radius * np.ones(n_wrap), np.zeros(n_wrap)]
+    )
+    left = np.column_stack([xi_sweep, np.zeros(n_wrap), max_radius * np.ones(n_wrap)])
+    right = np.column_stack([xi_sweep, np.zeros(n_wrap), -max_radius * np.ones(n_wrap)])
+
     return np.vstack([top, bottom, left, right])
+
 
 def project_cloud_to_parametric_path(
     pcl, track_data, track_kdtree, max_radius=1, safety_check=False, prune=True
@@ -155,6 +164,7 @@ def project_cloud_to_parametric_path(
     w2 = np.sum(offset * e2, axis=1)
 
     return np.column_stack((pcl_xi, w1, w2))
+
 
 def add_world_boundaries(occ_cl, planar):
 
@@ -293,6 +303,7 @@ def get_ellipse_parameters(P, pp, p0=np.array([0, 0])):
 
     return pc, width, height, theta
 
+
 def get_ellipse_points(width, height, angle, theta):
     """Computes the points in the contour of an ellipse x**2/a + y**2/b = 1
     NOTE: Implementation taken from https://math.stackexchange.com/a/4517941
@@ -322,5 +333,3 @@ def get_ellipse_points(width, height, angle, theta):
     pt = R_ellipse @ rot
 
     return pt
-
-

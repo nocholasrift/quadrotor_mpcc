@@ -341,15 +341,75 @@ def compute_corridor_fs(p_traj, ns, bs, radius=0.5, n_points=20):
     return corridor_pts
 
 
-def get_local_window_params(track_data, s_global_now, num_knots, window_dist=4.0):
-    s_orig = track_data["s"]
-    s_end = min(s_global_now + window_dist, s_orig[-1])
+# def get_local_window_params(track_data, s_global_now, num_knots, window_dist=4.0):
+#     s_orig = track_data["s"]
+#     s_end = min(s_global_now + window_dist, s_orig[-1])
+#
+#     # Create the evaluation points for the knots
+#     # We sample knots over the window_dist
+#     s_query = np.linspace(s_global_now, s_end, num_knots)
+#
+#     new_knots = {}
+#     for key in [
+#         "x",
+#         "y",
+#         "z",
+#         "vx",
+#         "vy",
+#         "vz",
+#         "e1x",
+#         "e1y",
+#         "e1z",
+#         "e2x",
+#         "e2y",
+#         "e2z",
+#     ]:
+#         # We use 'period' if your track is a loop, otherwise let it clamp
+#         new_knots[key] = np.interp(s_query, s_orig, track_data[key])
+#
+#     # Construct parameter vector
+#     local_window = {
+#         "s": s_query,
+#         "x": new_knots["x"],
+#         "y": new_knots["y"],
+#         "z": new_knots["z"],
+#         "vx": new_knots["vx"],
+#         "vy": new_knots["vy"],
+#         "vz": new_knots["vz"],
+#         "e1x": new_knots["e1x"],
+#         "e1y": new_knots["e1y"],
+#         "e1z": new_knots["e1z"],
+#         "e2x": new_knots["e2x"],
+#         "e2y": new_knots["e2y"],
+#         "e2z": new_knots["e2z"],
+#         "L": s_end - s_global_now,
+#     }
+#
+#     return local_window
 
-    # Create the evaluation points for the knots
-    # We sample knots over the window_dist
-    s_query = np.linspace(s_global_now, s_end, num_knots)
+
+def get_local_window_params(
+    track_data, s_global_now, num_knots, window_dist=4.0, loop=True
+):
+    s_orig = track_data["s"]
+    L_total = s_orig[-1]
+
+    # 1. Determine the query points
+    # If looping, we don't min() with s_orig[-1]; we just look ahead window_dist
+    s_end = (
+        s_global_now + window_dist if loop else min(s_global_now + window_dist, L_total)
+    )
+    s_query_raw = np.linspace(s_global_now, s_end, num_knots)
+
+    # 2. Handle Wrapping for Looping
+    if loop:
+        # Modulo ensures s_query stays within [0, L_total]
+        s_query_wrapped = np.mod(s_query_raw, L_total)
+    else:
+        s_query_wrapped = s_query_raw
 
     new_knots = {}
+    # 3. Interpolate with Periodicity
     for key in [
         "x",
         "y",
@@ -364,12 +424,19 @@ def get_local_window_params(track_data, s_global_now, num_knots, window_dist=4.0
         "e2y",
         "e2z",
     ]:
-        # We use 'period' if your track is a loop, otherwise let it clamp
-        new_knots[key] = np.interp(s_query, s_orig, track_data[key])
+
+        if loop:
+            # np.interp doesn't natively handle 'period' for the query,
+            # but since we manually wrapped s_query, it works perfectly.
+            new_knots[key] = np.interp(
+                s_query_wrapped, s_orig, track_data[key], period=L_total
+            )
+        else:
+            new_knots[key] = np.interp(s_query_wrapped, s_orig, track_data[key])
 
     # Construct parameter vector
     local_window = {
-        "s": s_query,
+        "s": s_query_raw,  # We keep the raw s for the solver's internal distance logic
         "x": new_knots["x"],
         "y": new_knots["y"],
         "z": new_knots["z"],
@@ -382,7 +449,7 @@ def get_local_window_params(track_data, s_global_now, num_knots, window_dist=4.0
         "e2x": new_knots["e2x"],
         "e2y": new_knots["e2y"],
         "e2z": new_knots["e2z"],
-        "L": s_end - s_global_now,
+        "L": window_dist if loop else (s_end - s_global_now),
     }
 
     return local_window
@@ -551,8 +618,8 @@ dq = 92e-3  # [m] distance between motors' center
 l = dq / 2  # [m] distance between motors' center and the axis of rotation
 n_knots = 10
 
-max_vel = 2.0
-max_s_dot = 2.0
+max_vel = 3.0
+max_s_dot = 3.0
 
 Tf = 2.5
 N = 40

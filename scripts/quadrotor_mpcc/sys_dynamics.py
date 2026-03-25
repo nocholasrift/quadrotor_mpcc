@@ -117,7 +117,6 @@ class SysDyn:
         e_offset_a_coeff = ca.MX.sym("e_offset_a_coeff", self.tube_degree + 1)
         e_offset_b_coeff = ca.MX.sym("e_offset_b_coeff", self.tube_degree + 1)
 
-
         s_start = ca.MX.sym("s_start")
         s_norm = (s - s_start) / L_path
         # s_norm = s / L_path
@@ -143,7 +142,6 @@ class SysDyn:
         #     e_axis_b = e_axis_b + e_axis_b_coeff[i] * basis_i
         #     e_offset_a = e_offset_a + e_offset_a_coeff[i] * basis_i
         #     e_offset_b = e_offset_b + e_offset_b_coeff[i] * basis_i
-
 
         xr_dot = vxr_func(s_norm, vx_coeff)
         yr_dot = vyr_func(s_norm, vy_coeff)
@@ -210,13 +208,9 @@ class SysDyn:
         err_e2 = ca.dot(e_tot, e2)
         # err_rmf = ca.vertcat(err_e1, err_e2)
 
-        E = ca.vertcat(
-            ca.horzcat(e_axis_a, 0),
-            ca.horzcat(0, e_axis_b)
-        )
+        E = ca.vertcat(ca.horzcat(e_axis_a, 0), ca.horzcat(0, e_axis_b))
 
         # ellipse_center = ca.vertcat(e_offset_a, e_offset_b)
-
 
         # cbf = 1 - (ellipse_center - err_rmf).T @ E @ (ellipse_center - err_rmf)
         cx = -e_offset_a / (2 * e_axis_a)
@@ -225,9 +219,9 @@ class SysDyn:
         w2_shifted = err_e2 - cy
 
         cbf = 1 - (e_axis_a * w1_shifted**2 + e_axis_b * w2_shifted**2)
-        # cbf = 1 - (e_axis_a * err_e1**2 + 
-        #            e_axis_b * err_e2**2 + 
-        #            e_offset_a * err_e1 + 
+        # cbf = 1 - (e_axis_a * err_e1**2 +
+        #            e_axis_b * err_e2**2 +
+        #            e_offset_a * err_e1 +
         #            e_offset_b * err_e2)
 
         # perp_dir = e_perp / (
@@ -307,7 +301,6 @@ class SysDyn:
         alpha1 = ca.MX.sym("alpha1")
         cbf_cons = Lf2h + LgLfh @ u + alpha1 * Lfh + alpha0 * cbf
 
-
         # cbf_cons = hddot + 10 * Lfh + 0.02 * cbf
         # cbf_cons = Lfh + Lgh @ u + alpha0 * cbf
 
@@ -337,7 +330,7 @@ class SysDyn:
             alpha1,
         )
 
-        s_cons = s_norm #- L_path
+        s_cons = s_norm  # - L_path
 
         cbf_logic_func = ca.Function(
             "cbf_logic",
@@ -410,9 +403,6 @@ class SysDyn:
 
         model.con_h_expr_0 = ca.vertcat(cbf_cons, s_cons)
         model.con_h_expr = ca.vertcat(cbf_cons, s_cons)
-
-        # model.con_h_expr_0 = ca.vertcat(s_cons)
-        # model.con_h_expr = ca.vertcat(s_cons)
         model.con_h_expr_e = ca.vertcat(s_cons)
 
         model.cost_expr_ext_cost = cost_expr

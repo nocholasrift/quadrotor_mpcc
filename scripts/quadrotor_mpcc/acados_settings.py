@@ -39,6 +39,7 @@ def create_ocp(tube_degree):
     ocp.model.cost_expr_ext_cost_0 = model.cost_expr_ext_cost
     ocp.model.cost_expr_ext_cost = model.cost_expr_ext_cost
     ocp.model.cost_expr_ext_cost_e = model.cost_expr_ext_cost_e
+    ocp.solver_options.print_level = 0
 
     # con_lower_bounds = np.array([-ACADOS_INFTY, -ACADOS_INFTY, -ACADOS_INFTY])
     # con_upper_bounds = np.array([0, ACADOS_INFTY, 0])

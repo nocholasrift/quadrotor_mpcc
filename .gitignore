@@ -1,9 +1,11 @@
 c_generated_code/
 build/
 .cache/
+results/
 .DS_Store
 __pycache__
 cache/
+acados_ocp.json
 
 *.zip
 stats/

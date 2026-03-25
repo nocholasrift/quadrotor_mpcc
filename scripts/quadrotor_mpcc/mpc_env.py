@@ -1,7 +1,9 @@
 import time
 import click
-# import matplotlib
-# matplotlib.use("TkAgg")
+
+import matplotlib
+
+matplotlib.use("Qt5Agg")
 
 import matplotlib.pyplot as plt
 from common import *
@@ -26,6 +28,8 @@ class VolaDroneEnv(gym.Env):
         integrator=None,
         render_mode=None,
         normalize_obs=True,
+        max_step=1000,
+        loop=False,
     ):
         super().__init__()
 
@@ -34,10 +38,12 @@ class VolaDroneEnv(gym.Env):
         except:
             self.pcl = []
 
+        self.max_step = max_step
+        self.loop = loop
         self.should_normalize_obs = normalize_obs
 
-        self.alpha0 = 1.0
-        self.alpha1 = 1.0
+        self.alpha0 = 5.0
+        self.alpha1 = 5.0
 
         # Load Track metadata
         self.track = track
@@ -66,7 +72,7 @@ class VolaDroneEnv(gym.Env):
         if self.should_normalize_obs:
             # stats = np.load(f"stats/{track}_normalization_stats.npz")
             stats = np.load(f"stats/all_normalization_stats.npz")
-            # stats = np.load(f"stats/straight_line_normalization_stats.npz")
+
             self.obs_mean = stats["obs_mean"]
             self.obs_std = stats["obs_std"]
 
@@ -114,7 +120,7 @@ class VolaDroneEnv(gym.Env):
 
         return obs
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.state = np.zeros(self.nx)
         self.state[0] = self.track_data["x"][0]
@@ -124,6 +130,7 @@ class VolaDroneEnv(gym.Env):
 
         self.n_consecutive_infeasibilities = 0
         self.prev_s = 0
+        self.step_count = 0
 
         for stage in range(self.N + 1):
             self.solver.set(stage, "x", self.state)
@@ -131,7 +138,7 @@ class VolaDroneEnv(gym.Env):
                 self.solver.set(stage, "u", np.zeros(self.nu))
 
         self.params = np.array(
-            [10.0, 100.0, 1, 5.0, 1.0, 1.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
+            [1.0, 100.0, 1, 5.0, 1.0, 1.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
         )
 
         self.tube_coeffs = get_free_tube(tube_degree, self.max_tube_radius)
@@ -182,6 +189,7 @@ class VolaDroneEnv(gym.Env):
             s_global_now,
             n_knots,
             window_dist=self.track_horizon_window,
+            loop=self.loop,
         )
 
         # unnormed_action = action_unnormalize(action, min_alpha_dot, max_alpha_dot)
@@ -215,14 +223,12 @@ class VolaDroneEnv(gym.Env):
                 self.max_tube_radius,
                 True,
             )
-            solver.solve(solver=cp.CLARABEL, verbose=False)
+            solver.solve(solver=cp.CLARABEL, verbose=False, time_limit=1.0)
             a, b, c, d = coeffs
             self.tube_coeffs[0, :] = a.value
             self.tube_coeffs[1, :] = b.value
             self.tube_coeffs[2, :] = c.value
             self.tube_coeffs[3, :] = d.value
-            # else:
-            #     self.tube_coeffs = get_free_tube(self.tube_degree, self.max_tube_radius)
 
         # print(self.tube_coeffs)
 
@@ -291,37 +297,39 @@ class VolaDroneEnv(gym.Env):
         # print("delta s", xN[10] - local_state[10])
 
         u = self.solver.get(0, "u")
-        gym_obs = self._get_obs(param_dict, self.state[10] / self.track_data["s"][-1])
+        gym_obs = self._get_obs(param_dict, self.state[11] / max_s_dot)
         # gym_obs = []
 
         # print(f"{s_global_now} / {self.params[-1]}")
 
         # Termination: Finished 99% of the track
-        terminated = bool(
-            # self.state[10]
-            # >= self.track_data["L"] - self.track_horizon_window
-            self.state[10]
-            >= self.track_data["L"] - 0.1
+        self.step_count += 1
+        terminated = (
+            bool(
+                self.state[10]
+                >= self.track_data["L"] - self.track_horizon_window - 0.1
+                # self.state[10]
+                # >= self.track_data["L"] - 0.1
+            )
+            and not self.loop
         )
 
         # Truncation: Drone flew way off course (safety check)
         truncated = (
             bool(np.linalg.norm(self.state[:3]) > 100.0)
-            # or self.n_consecutive_infeasibilities >= 3
+            or self.step_count >= self.max_step
         )
 
-        reward = self._get_reward(gym_obs, self.state[-1], terminated, status)
+        reward = self._get_reward(gym_obs, self.state[-2], terminated, status)
 
         # print("un-norm", gym_obs)
         if self.should_normalize_obs:
             gym_obs = self.normalize_obs(gym_obs, self.obs_mean, self.obs_std)
 
-        self.step_count += 1
-
         # print("norm", gym_obs)
         return gym_obs, reward, terminated, truncated, {}
 
-    def _get_obs(self, local_p, s):
+    def _get_obs(self, local_p, s_dot):
         n = n_knots
         N = self.N
         M = self.M
@@ -372,7 +380,7 @@ class VolaDroneEnv(gym.Env):
 
             obs.extend([cbf, lfh, hddot])
 
-        obs.append(s)
+        obs.append(s_dot)
         # print("len: ", s)
         # obs.append(self.alpha0)
         # obs.append(self.alpha1)
@@ -380,16 +388,16 @@ class VolaDroneEnv(gym.Env):
         obs = np.nan_to_num(obs, nan=0.0, posinf=0.0, neginf=0.0)
         return np.array(obs, dtype=np.float32)
 
-    def _get_reward(self, obs, s_dot, terminated, solver_status):
+    def _get_reward(self, obs, s, terminated, solver_status):
 
         # 1. Progress reward
-        progress_reward = 0.2 * np.clip(s_dot, 0, 3.0)  # Range: [0, 6]
+        s_dot = obs[-1]
+        progress_reward = 0.2 * np.clip(s_dot, 0, max_s_dot)
 
         # 2. CBF constraint violations from observation
         cbf_violation_penalty = 0.0
 
         M = self.M
-        alpha = self.alpha0
         for i in range(M):
             cbf = obs[3 * i]
             lfh = obs[3 * i + 1]
@@ -397,10 +405,11 @@ class VolaDroneEnv(gym.Env):
 
             # Check constraint: Lfh + alpha*cbf >= 0
             constraint_value = self.alpha0 * cbf + self.alpha1 * lfh + hddot
+            constraint_value = np.clip(constraint_value, -10.0, 5.0)
 
             if constraint_value < 0:  # Violation
                 # Penalize proportional to violation magnitude
-                cbf_violation_penalty += -1.5 * abs(constraint_value)
+                cbf_violation_penalty += -1.0 * abs(constraint_value)
 
         # 3. Alpha regularization (prefer small alpha for efficiency)
         # alpha typically in [0.1, 10]
@@ -416,15 +425,15 @@ class VolaDroneEnv(gym.Env):
             feasibility_penalty = -1.0 * np.min(alphas - max_alpha) ** 2
 
         # 5. Terminal bonus (reached goal)
-        terminal_bonus = 5.0 if terminated else 0.0
+        # terminal_bonus = 5.0 if terminated else 0.0
 
         solver_status_reward = 0
         traj_len = self.track_data["s"][-1]
-        if obs[-1] < 1.0 - self.track_horizon_window / traj_len:
+        if s < traj_len - self.track_horizon_window:
 
             if solver_status != 0:
                 self.n_consecutive_infeasibilities += 1
-                solver_status_reward -= 1.0
+                solver_status_reward -= 0.5
             else:
                 self.n_consecutive_infeasibilities = 0
 
@@ -446,7 +455,7 @@ class VolaDroneEnv(gym.Env):
             + cbf_violation_penalty
             + alpha_reg
             + feasibility_penalty
-            + terminal_bonus
+            # + terminal_bonus
             + solver_status_reward
         )
 
@@ -571,15 +580,21 @@ class VolaDroneEnv(gym.Env):
 
 
 def main():
+    loop = False
     # track = "short_line"
     # track = "straight_line"
     # track = "7gates"
     # track = "figure8"
     # track = "knotted_helix"
     # track = "12gates"
-    track = "race_uzh_19g"
+    # track = "race_uzh_19g"
 
-    env = VolaDroneEnv(track, render_mode="human", normalize_obs=False)
+    # looped tracks
+    # track = "3d_loop"
+    track = "3d_square"
+    loop = True
+
+    env = VolaDroneEnv(track, render_mode="human", normalize_obs=False, loop=loop)
 
     env.reset()
     for i in range(0, 2000):

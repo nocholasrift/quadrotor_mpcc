@@ -14,7 +14,8 @@ from acados_template import AcadosOcpSolver, AcadosSimSolver
 # integrator = AcadosSimSolver(ocp)
 
 
-track = "straight_line"
+# track = "straight_line"
+track = "race_uzh_19g"
 
 
 def make_env():
