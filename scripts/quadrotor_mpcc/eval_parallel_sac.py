@@ -12,9 +12,11 @@ from common import *
 # 1. Point to your best model or a specific checkpoint
 MODEL_PATH = "./results/best_model/best_model.zip"
 # TRACK_TO_EVAL = "race_uzh_19g"
-TRACK_TO_EVAL = "3d_square"
-N_EPISODES = 3
-MAX_STEPS = 1500
+# TRACK_TO_EVAL = "3d_square"
+TRACK_TO_EVAL = "straight_line"
+LOOP = False
+N_EPISODES = 1
+MAX_STEPS = 300
 
 
 def make_eval_env(track):
@@ -23,6 +25,7 @@ def make_eval_env(track):
         track,
         normalize_obs=True,  # MUST match training
         render_mode="human",  # Enable the 3D plotting we refactored earlier
+        loop=LOOP,
     )
     env = TimeLimit(env, max_episode_steps=MAX_STEPS)
     env = Monitor(env)

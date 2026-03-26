@@ -12,7 +12,6 @@ def load_pcl_from_env(yaml_path, samples_per_m2=20):
 
     pcl = []
     for obj in config["obstacles"]:
-        print(obj)
         if obj["type"] == "box":
             mesh = trimesh.creation.box(extents=obj["size"])
         elif obj["type"] == "sphere":

@@ -278,12 +278,11 @@ def casadi_chebyshev_basis(xi, degree):
     return T
 
 
-def getRMFBasis(vx, vy, vz, s):
+def getRMFBasis(vx, vy, vz, s, ref = np.array([0.0, 0.0, 1.0])):
 
     e1 = np.zeros((len(s), 3))
     e2 = np.zeros((len(s), 3))
     T = np.zeros((len(s), 3))
-    ref = np.array([0.0, 0.0, 1.0])
 
     # initialize first frame
     T[0] = np.array([vx(s[0]), vy(s[0]), vz(s[0])]).reshape(
@@ -516,16 +515,12 @@ def draw_horizon(ax, track_data, state):
     return p, t, e1, e2
 
 
-def get_corridor_pts(ax, track_data, coeffs, alpha=0.2):
-    n_sweep = 100
+def get_corridor_pts(ax, track_data, coeffs, alpha=0.2, n_sweep=100, stride=1, n_angles=50):
     xi_eval = np.linspace(0, 1, n_sweep)
-    P_eval = np.zeros((n_sweep, 2, 2))
-    pp_eval = np.zeros((n_sweep, 2))
 
-    poly_deg = len(coeffs[0]) - 1
-    Phi_sweep = get_cheby_basis(xi_eval, poly_deg)
+    poly_deg   = len(coeffs[0]) - 1
+    Phi_sweep  = get_cheby_basis(xi_eval, poly_deg)
     a, b, c, d = coeffs
-
     a_sweep = Phi_sweep @ a
     b_sweep = Phi_sweep @ b
     c_sweep = Phi_sweep @ c
@@ -533,41 +528,40 @@ def get_corridor_pts(ax, track_data, coeffs, alpha=0.2):
 
     s_sweep = track_data["s"]
     s_sweep = s_sweep - s_sweep[0]
+    L_path  = s_sweep[-1]
 
-    # print(s_sweep)
-    L_path = s_sweep[-1]
-    # L_path = track_data["L"]
+    # Query s values for each sweep point
+    s_query = xi_eval * L_path
 
-    x = track_data["x"]
-    y = track_data["y"]
-    z = track_data["z"]
-    traj = np.vstack([x, y, z]).T
+    # Interpolate position and frame — no more argmin snapping!
+    traj_x = np.interp(s_query, s_sweep, track_data["x"])
+    traj_y = np.interp(s_query, s_sweep, track_data["y"])
+    traj_z = np.interp(s_query, s_sweep, track_data["z"])
 
-    vx = track_data["vx"]
-    vy = track_data["vy"]
-    vz = track_data["vz"]
-    tan = np.vstack([vx, vy, vz]).T
-    tan /= np.linalg.norm(tan, axis=1)[:, np.newaxis]
+    e1x = np.interp(s_query, s_sweep, track_data["e1x"])
+    e1y = np.interp(s_query, s_sweep, track_data["e1y"])
+    e1z = np.interp(s_query, s_sweep, track_data["e1z"])
 
-    e1x = track_data["e1x"]
-    e1y = track_data["e1y"]
-    e1z = track_data["e1z"]
-    e1 = np.vstack([e1x, e1y, e1z]).T
-    e1 /= np.linalg.norm(e1, axis=1)[:, np.newaxis]
+    vx  = np.interp(s_query, s_sweep, track_data["vx"])
+    vy  = np.interp(s_query, s_sweep, track_data["vy"])
+    vz  = np.interp(s_query, s_sweep, track_data["vz"])
 
-    e2 = np.cross(tan, e1)
+    tan = np.stack([vx, vy, vz], axis=1)
+    tan /= np.linalg.norm(tan, axis=1, keepdims=True) + 1e-12
+    e1  = np.stack([e1x, e1y, e1z], axis=1)
+    e1  /= np.linalg.norm(e1,  axis=1, keepdims=True) + 1e-12
+    e2  = np.cross(tan, e1)
 
-    n_angles = 50
     angles = np.linspace(0, 2 * np.pi, n_angles)
-
     ellipse_pts_world = []
 
-    for i in range(0, n_sweep, 5):
-        P_eval[i] = np.array([[a_sweep[i], 0], [0, b_sweep[i]]])
-        pp_eval[i] = np.array([c_sweep[i], d_sweep[i]])
-        pc, width, height, angle = get_ellipse_parameters(P=P_eval[i], pp=pp_eval[i])
-
+    for i in range(0, n_sweep, stride):
+        P  = np.array([[a_sweep[i], 0], [0, b_sweep[i]]])
+        pp = np.array([c_sweep[i], d_sweep[i]])
+        pc, width, height, angle = get_ellipse_parameters(P=P, pp=pp)
         ellipse_params = np.array([width, height, angle, pc[0], pc[1]])
+
+        center = np.array([traj_x[i], traj_y[i], traj_z[i]])
         for j in range(n_angles):
             ellipse_pts = get_ellipse_points(
                 width=ellipse_params[0],
@@ -575,15 +569,10 @@ def get_corridor_pts(ax, track_data, coeffs, alpha=0.2):
                 angle=ellipse_params[2],
                 theta=angles[j],
             )
+            w = ellipse_pts + ellipse_params[-2:]
+            ellipse_pts_world.append(center + w[0] * e1[i] + w[1] * e2[i])
 
-            ind = np.argmin(np.abs(s_sweep - xi_eval[i] * L_path))
-            w = ellipse_pts[:] + ellipse_params[-2:]
-            ellipse_pts_world.append(traj[ind] + w[0] * e1[ind] + w[1] * e2[ind])
-
-    all_pts = np.array(ellipse_pts_world)
-    return all_pts
-    # ax.scatter(all_pts[:,0], all_pts[:,1], all_pts[:,2], alpha=alpha, s=5)
-
+    return np.array(ellipse_pts_world)
 
 def action_unnormalize(val, min, max):
     return (val + 1.0) * (max - min) / 2.0 + min

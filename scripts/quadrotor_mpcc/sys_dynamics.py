@@ -361,7 +361,7 @@ class SysDyn:
                 x,
                 u,
             ],
-            [hddot, Lfh, cbf],
+            [hddot, Lfh, cbf, LgLfh],
             [
                 "x_c",
                 "y_c",
@@ -389,7 +389,7 @@ class SysDyn:
                 "x_val",
                 "u",
             ],
-            ["hddot", "Lfh", "cbf"],
+            ["hddot", "Lfh", "cbf", "lglfh"],
         )
 
         model = AcadosModel()

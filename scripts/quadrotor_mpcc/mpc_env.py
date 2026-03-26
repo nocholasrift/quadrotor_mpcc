@@ -3,7 +3,7 @@ import click
 
 import matplotlib
 
-matplotlib.use("Qt5Agg")
+# matplotlib.use("Qt5Agg")
 
 import matplotlib.pyplot as plt
 from common import *
@@ -30,11 +30,12 @@ class VolaDroneEnv(gym.Env):
         normalize_obs=True,
         max_step=1000,
         loop=False,
+        pcl_density=20,
     ):
         super().__init__()
 
         try:
-            self.pcl = load_pcl_from_env(f"../../resources/envs/{track}.yaml")
+            self.pcl = load_pcl_from_env(f"../../resources/envs/{track}.yaml", pcl_density)
         except:
             self.pcl = []
 
@@ -42,8 +43,8 @@ class VolaDroneEnv(gym.Env):
         self.loop = loop
         self.should_normalize_obs = normalize_obs
 
-        self.alpha0 = 5.0
-        self.alpha1 = 5.0
+        self.alpha0 = 1.0
+        self.alpha1 = 10.0
 
         # Load Track metadata
         self.track = track
@@ -131,6 +132,9 @@ class VolaDroneEnv(gym.Env):
         self.n_consecutive_infeasibilities = 0
         self.prev_s = 0
         self.step_count = 0
+
+        self.alpha0 = 1.0
+        self.alpha1 = 10.0
 
         for stage in range(self.N + 1):
             self.solver.set(stage, "x", self.state)
@@ -289,6 +293,7 @@ class VolaDroneEnv(gym.Env):
         next_local_state[6:10] /= q_norm
 
         global_s_next = s_global_now + next_local_state[10]
+        # global_s_next = global_s_next % self.track_data["s"][-1]
         self.state = next_local_state.copy()
         # self.state[10] = global_s_next
         # print("xN s:", self.solver.get(self.N, "x")[10])
@@ -306,10 +311,10 @@ class VolaDroneEnv(gym.Env):
         self.step_count += 1
         terminated = (
             bool(
-                self.state[10]
-                >= self.track_data["L"] - self.track_horizon_window - 0.1
                 # self.state[10]
-                # >= self.track_data["L"] - 0.1
+                # >= self.track_data["L"] - self.track_horizon_window - 0.1
+                self.state[10]
+                >= self.track_data["L"] - 0.1
             )
             and not self.loop
         )
@@ -343,7 +348,7 @@ class VolaDroneEnv(gym.Env):
             x_i = self.solver.get(int(i), "x")
             u_i = self.solver.get(int(i), "u")
 
-            hddot, lfh, cbf = self.cbf_func(
+            hddot, lfh, cbf, LgLfh = self.cbf_func(
                 local_p["x"],
                 local_p["y"],
                 local_p["z"],
@@ -366,7 +371,6 @@ class VolaDroneEnv(gym.Env):
                 u_i,
             )
 
-            # print(LgLfh)
             # print(i, "hddot", hddot)
             # print(i, "lfh", lfh)
             # print(i, "cbf", cbf)
@@ -478,17 +482,21 @@ class VolaDroneEnv(gym.Env):
 
             # --- ADDED: Obstacle PointCloud ---
             if len(self.pcl) > 0:
+                sample_size = int(0.2 * len(self.pcl))
+                inds = np.linspace(0, len(self.pcl), num=len(self.pcl), dtype=int)
+                sampled_pcl = np.random.choice(inds, size=sample_size, replace=False)
+                print(sampled_pcl)
                 self.ax.scatter(
-                    self.pcl[:, 0],
-                    self.pcl[:, 1],
-                    self.pcl[:, 2],
-                    c=self.pcl[:, 2],
+                    self.pcl[sampled_pcl, 0],
+                    self.pcl[sampled_pcl, 1],
+                    self.pcl[sampled_pcl, 2],
+                    c=self.pcl[sampled_pcl, 2],
                     cmap="plasma",
                     s=2,
                     alpha=0.5,
                 )
 
-            self.tube_plot = self.ax.scatter([], [], [], s=3, alpha=0.15, color="blue")
+            self.tube_plot = self.ax.scatter([], [], [], s=3, alpha=0.10, color="blue")
             (self.drone_marker,) = self.ax.plot(
                 [], [], [], "ro", markersize=8, zorder=10
             )
@@ -526,7 +534,7 @@ class VolaDroneEnv(gym.Env):
         local_window = get_local_window_params(
             self.track_data, self.prev_s, 100, window_dist=self.track_horizon_window
         )
-        corridor_points = get_corridor_pts(self.ax, local_window, self.tube_coeffs)
+        corridor_points = get_corridor_pts(self.ax, local_window, self.tube_coeffs, n_sweep=20)
         self.tube_plot._offsets3d = (
             corridor_points[:, 0],
             corridor_points[:, 1],
@@ -592,7 +600,7 @@ def main():
     # looped tracks
     # track = "3d_loop"
     track = "3d_square"
-    loop = True
+    # loop = True
 
     env = VolaDroneEnv(track, render_mode="human", normalize_obs=False, loop=loop)
 

@@ -1,0 +1,32 @@
+# # Define a "library" of reusable shapes at the top
+templates:
+  # - &cube
+  #   type: "box"
+  #   size: [1.0, 1.0, 3.0]
+
+  - &pillar
+    type: "box"
+    size: [1.0, 1.0, 3.0]
+
+obstacles:
+  - <<: *pillar
+    position: [-0.7, 3.3, 1.0]
+    rotation: [0, 0, 0]
+
+  - <<: *pillar
+    position: [0.7, 6.6, 1.0]
+    rotation: [0, 0, 0]
+
+# templates:
+#   - &sphere
+#     type: "sphere"
+#     radius: 0.1
+#
+# obstacles:
+#   - <<: *sphere
+#     position: [-0.7, 3.3, 1.8]
+#     rotation: [0, 0, 0]
+#
+#   - <<: *sphere
+#     position: [0.7, 6.6, 0.5]
+#     rotation: [0, 0, 0]
