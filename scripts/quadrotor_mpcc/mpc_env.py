@@ -500,14 +500,14 @@ def main():
     # track = "short_line"
     # track = "straight_line"
     # track = "7gates"
-    # track = "figure8"
+    track = "figure8"
     # track = "knotted_helix"
     # track = "12gates"
     # track = "race_uzh_19g"
 
     # looped tracks
     # track = "3d_loop"
-    track = "3d_square"
+    # track = "3d_square"
     # loop = True
 
     env = VolaDroneEnv(track, render_mode="human", normalize_obs=False, loop=loop)

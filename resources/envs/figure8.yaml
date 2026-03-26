@@ -1,0 +1,126 @@
+# ══════════════════════════════════════════════════════════════
+# OBSTACLE DEFINITIONS — Figure-8 (a=10, b=5, z∈[1,8])
+# ══════════════════════════════════════════════════════════════
+
+templates:
+  - &squeeze_plate
+    type: "box"
+    size: [6.0, 6.0, 0.4]
+
+  - &corridor_pillar
+    type: "box"
+    size: [0.5, 0.5, 20.0]
+
+  - &crossbar
+    type: "box"
+    size: [4.0, 0.4, 0.4]
+
+obstacles:
+
+  # ── HORIZONTAL SQUEEZE 1: Right tip (x ≈ +10) ──
+  # Trajectory passes at z ≈ 8.0, squeeze to ~6m gap
+
+  # Ceiling plate
+  - <<: *squeeze_plate
+    position: [10.00, 0.00, 7.00]
+    rotation: [0, 0, 0]
+
+  # Floor plate
+  - <<: *squeeze_plate
+    position: [10.00, 0.00, 5.0]
+    rotation: [0, 0, 0]
+
+  # ── HORIZONTAL SQUEEZE 2: Left tip (x ≈ -10) ──
+  # Trajectory passes at z ≈ 1.0, squeeze to ~6m gap
+
+  # Ceiling plate
+  - <<: *squeeze_plate
+    position: [-10.00, 0.00, 3.50]
+    rotation: [0, 0, 0]
+
+  # Floor plate
+  - <<: *squeeze_plate
+    position: [-10.00, 0.00, 1.0]
+    rotation: [0, 0, 0]
+
+  # ── VERTICAL CORRIDOR 1: Upper-right corridor (climbing) ──
+  # Trajectory at [7.07, 5.00, 6.97]
+
+  # Left pillar
+  - <<: *corridor_pillar
+    position: [7.07, 7.00, 0.00]
+    rotation: [0, 0, 0]
+
+  # Right pillar
+  - <<: *corridor_pillar
+    position: [7.07, 3.00, 0.00]
+    rotation: [0, 0, 0]
+
+  # Crossbar overhead
+  - <<: *crossbar
+    position: [7.07, 5.00, 9.47]
+    rotation: [0, 0, 0.00]
+
+  # ── VERTICAL CORRIDOR 2: Upper-left corridor (crossing high) ──
+  # Trajectory at [7.07, -5.00, 6.97]
+
+  # Left pillar
+  - <<: *corridor_pillar
+    position: [7.07, -7.00, 0.00]
+    rotation: [0, 0, 0]
+
+  # Right pillar
+  - <<: *corridor_pillar
+    position: [7.07, -3.00, 0.00]
+    rotation: [0, 0, 0]
+
+  # Crossbar overhead
+  - <<: *crossbar
+    position: [7.07, -5.00, 9.47]
+    rotation: [0, 0, 180.00]
+
+  # ── VERTICAL CORRIDOR 3: Lower-left corridor (descending) ──
+  # Trajectory at [-7.07, 5.00, 2.03]
+
+  # Left pillar
+  - <<: *corridor_pillar
+    position: [-7.07, 3.00, 0.00]
+    rotation: [0, 0, 0]
+
+  # Right pillar
+  - <<: *corridor_pillar
+    position: [-7.07, 6.00, 0.00]
+    rotation: [0, 0, 0]
+
+  # Crossbar overhead
+  - <<: *crossbar
+    position: [-7.07, 5.00, 4.53]
+    rotation: [0, 0, 180.00]
+    
+  # Left pillar
+  - <<: *corridor_pillar
+    position: [1.2, -0.5, 0.00]
+    rotation: [0, 0, 0]
+
+  # Right pillar
+  - <<: *corridor_pillar
+    position: [-2.2, -0.5, 0.00]
+    rotation: [0, 0, 0]
+
+  # ── VERTICAL CORRIDOR 4: Lower-right corridor (crossing low) ──
+  # Trajectory at [-7.07, -5.00, 2.03]
+
+  # Left pillar
+  - <<: *corridor_pillar
+    position: [-7.07, -2.00, 0.00]
+    rotation: [0, 0, 0]
+
+  # Right pillar
+  - <<: *corridor_pillar
+    position: [-7.07, -4.00, 0.00]
+    rotation: [0, 0, 0]
+
+  # Crossbar overhead
+  - <<: *crossbar
+    position: [-7.07, -5.00, 4.53]
+    rotation: [0, 0, 0.00]
