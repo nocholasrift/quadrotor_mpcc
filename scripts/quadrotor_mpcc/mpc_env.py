@@ -43,8 +43,11 @@ class VolaDroneEnv(gym.Env):
         self.loop = loop
         self.should_normalize_obs = normalize_obs
 
-        self.alpha0 = 1.0
-        self.alpha1 = 10.0
+        self.alpha0_init = 1.0
+        self.alpha1_init = 10.0
+
+        self.alpha0 = self.alpha0_init
+        self.alpha1 = self.alpha1_init
 
         # Load Track metadata
         self.track = track
@@ -133,8 +136,8 @@ class VolaDroneEnv(gym.Env):
         self.prev_s = 0
         self.step_count = 0
 
-        self.alpha0 = 1.0
-        self.alpha1 = 10.0
+        self.alpha0 = self.alpha0_init
+        self.alpha1 = self.alpha1_init
 
         for stage in range(self.N + 1):
             self.solver.set(stage, "x", self.state)
