@@ -12,11 +12,13 @@ from gymnasium import spaces
 import numpy as np
 
 from scipy.spatial import cKDTree
+from scipy.spatial.distance import cdist
 
 from acados_settings import create_ocp, resample_path
 from acados_template import AcadosOcpSolver, AcadosSimSolver
 
 from load_env import load_pcl_from_env
+from renderer import Renderer
 from tube_gen import *
 
 
@@ -34,6 +36,7 @@ class VolaDroneEnv(gym.Env):
     ):
         super().__init__()
 
+        # self.pcl = []
         try:
             self.pcl = load_pcl_from_env(f"../../resources/envs/{track}.yaml", pcl_density)
         except:
@@ -43,11 +46,13 @@ class VolaDroneEnv(gym.Env):
         self.loop = loop
         self.should_normalize_obs = normalize_obs
 
-        self.alpha0_init = 1.0
-        self.alpha1_init = 10.0
+        self.alpha0_init = 10.0
+        self.alpha1_init = 1.0
 
         self.alpha0 = self.alpha0_init
         self.alpha1 = self.alpha1_init
+
+        self.renderer = None
 
         # Load Track metadata
         self.track = track
@@ -55,6 +60,13 @@ class VolaDroneEnv(gym.Env):
         x = self.track_data["x"]
         y = self.track_data["y"]
         z = self.track_data["z"]
+
+        self.traj_dense = setup_track(self.track, samples=100)
+        self.traj_xyzs = np.column_stack([
+            self.traj_dense["x"], 
+            self.traj_dense["y"], 
+            self.traj_dense["z"]
+        ])
 
         traj = np.stack([x, y, z], axis=1)
 
@@ -189,6 +201,12 @@ class VolaDroneEnv(gym.Env):
         self.solver.set(self.N, "x", x_N_warm)
 
     def step(self, action=None):
+        drone_pt = self.state[:3]
+        diff = self.traj_xyzs - [drone_pt]
+        dists = np.linalg.norm(diff, axis=1)
+        closest_ind = np.argmin(dists)
+
+        # self.state[10] = self.traj_dense["s"][closest_ind]
         s_global_now = self.state[10]
         self.prev_s = s_global_now - 0.1
         local_window = get_local_window_params(
@@ -289,9 +307,8 @@ class VolaDroneEnv(gym.Env):
         start = time.time()
         status = self.solver.solve()
 
-        # print("solve time:", time.time() - start)
-
         next_local_state = self.solver.get(1, "x")
+
         q_norm = np.linalg.norm(next_local_state[6:10])
         next_local_state[6:10] /= q_norm
 
@@ -314,10 +331,10 @@ class VolaDroneEnv(gym.Env):
         self.step_count += 1
         terminated = (
             bool(
-                # self.state[10]
-                # >= self.track_data["L"] - self.track_horizon_window - 0.1
                 self.state[10]
-                >= self.track_data["L"] - 0.1
+                >= self.track_data["L"] - self.track_horizon_window - 0.1
+                # self.state[10]
+                # >= self.track_data["L"] - 0.1
             )
             and not self.loop
         )
@@ -468,126 +485,14 @@ class VolaDroneEnv(gym.Env):
 
         return reward
 
-    def render(self):
+    def render(self, save_video=False):
         if self.render_mode != "human":
             return
 
-        # --- Initialization ---
-        if self.fig is None:
-            plt.ion()
-            self.fig = plt.figure(figsize=(12, 6))
+        if self.renderer is None:
+            self.renderer = Renderer(self, save_video=save_video)
 
-            self.ax = self.fig.add_subplot(121, projection="3d")
-            self.ax_alpha = self.fig.add_subplot(122)
-
-            [_, x_t, y_t, z_t, _, _, _] = getTrack(self.track)
-            self.ax.plot(x_t, y_t, z_t, "k--", alpha=0.1)
-
-            # --- ADDED: Obstacle PointCloud ---
-            if len(self.pcl) > 0:
-                sample_size = int(0.2 * len(self.pcl))
-                inds = np.linspace(0, len(self.pcl), num=len(self.pcl), dtype=int)
-                sampled_pcl = np.random.choice(inds, size=sample_size, replace=False)
-                print(sampled_pcl)
-                self.ax.scatter(
-                    self.pcl[sampled_pcl, 0],
-                    self.pcl[sampled_pcl, 1],
-                    self.pcl[sampled_pcl, 2],
-                    c=self.pcl[sampled_pcl, 2],
-                    cmap="plasma",
-                    s=2,
-                    alpha=0.5,
-                )
-
-            self.tube_plot = self.ax.scatter([], [], [], s=3, alpha=0.10, color="blue")
-            (self.drone_marker,) = self.ax.plot(
-                [], [], [], "ro", markersize=8, zorder=10
-            )
-            (self.trail,) = self.ax.plot([], [], [], "g-", alpha=0.4)
-            (self.horizon_line,) = self.ax.plot([], [], [], "b-", lw=1.5)
-
-            self.quivers = {"t": None, "e1": None, "e2": None}
-            self.alpha_history = {"0": [], "1": []}
-            self.ts = []
-
-            (self.line_a0,) = self.ax_alpha.plot([], [], label=r"$\alpha_0$")
-            (self.line_a1,) = self.ax_alpha.plot([], [], label=r"$\alpha_1$")
-            self.ax_alpha.set_title("Safety Parameters (Alpha)")
-            self.ax_alpha.legend()
-            self.ax_alpha.grid(True, alpha=0.2)
-
-            self.history = []
-
-        # --- Updates ---
-        curr_pos = self.state[:3]
-        self.history.append(curr_pos.copy())
-        self.alpha_history["0"].append(self.alpha0)
-        self.alpha_history["1"].append(self.alpha1)
-        self.ts.append(len(self.history))
-
-        hist = np.array(self.history)
-
-        # Update Drone & Trail
-        self.drone_marker.set_data([curr_pos[0]], [curr_pos[1]])
-        self.drone_marker.set_3d_properties([curr_pos[2]])
-        self.trail.set_data(hist[:, 0], hist[:, 1])
-        self.trail.set_3d_properties(hist[:, 2])
-
-        # --- RE-ADDED: Corridor/Tube Logic ---
-        local_window = get_local_window_params(
-            self.track_data, self.prev_s, 100, window_dist=self.track_horizon_window
-        )
-        corridor_points = get_corridor_pts(self.ax, local_window, self.tube_coeffs, n_sweep=20)
-        self.tube_plot._offsets3d = (
-            corridor_points[:, 0],
-            corridor_points[:, 1],
-            corridor_points[:, 2],
-        )
-
-        # Update MPC Horizon
-        horizon_states = []
-        for i in range(self.N + 1):
-            try:
-                horizon_states.append(self.solver.get(i, "x")[:3])
-            except:
-                break
-
-        if horizon_states:
-            h_states = np.array(horizon_states)
-            self.horizon_line.set_data(h_states[:, 0], h_states[:, 1])
-            self.horizon_line.set_3d_properties(h_states[:, 2])
-
-        # Update Alpha Plot
-        self.line_a0.set_data(self.ts, self.alpha_history["0"])
-        self.line_a1.set_data(self.ts, self.alpha_history["1"])
-        self.ax_alpha.relim()
-        self.ax_alpha.autoscale_view()
-
-        # Quiver Refresh
-        # p, t, e1, e2 = draw_horizon(self.ax, self.track_data, self.state)
-        # for key, data, color in zip(["t", "e1", "e2"], [t, e1, e2], ["r", "g", "b"]):
-        #     if self.quivers[key] is not None:
-        #         self.quivers[key].remove()
-        #     self.quivers[key] = self.ax.quiver(
-        #         p[:, 0],
-        #         p[:, 1],
-        #         p[:, 2],
-        #         data[:, 0],
-        #         data[:, 1],
-        #         data[:, 2],
-        #         color=color,
-        #         length=0.5,
-        #         normalize=True,
-        #     )
-
-        # --- Sensible Axis Limits ---
-        # Look ahead 10 units, look behind 5 units
-        self.ax.set_xlim(curr_pos[0] - 5, curr_pos[0] + 10)
-        self.ax.set_ylim(curr_pos[1] - 5, curr_pos[1] + 10)
-        self.ax.set_zlim(curr_pos[2] - 5, curr_pos[2] + 10)
-
-        plt.draw()
-        plt.pause(1e-4)
+        self.renderer.update()
 
 
 def main():

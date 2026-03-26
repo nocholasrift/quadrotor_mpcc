@@ -42,6 +42,7 @@ from tube_gen import *
 
 # track="crazyflie_arclen_traj.txt"
 
+n_knots = 10
 
 def getTrack(track):
     # script_dir = Path(__file__).resolve().parent
@@ -62,7 +63,7 @@ def getTrack(track):
     return sref, xref, yref, zref, vxref, vyref, vzref
 
 
-def setup_track(track):
+def setup_track(track, samples=n_knots):
     [s, x, y, z, vx, vy, vz] = getTrack(track)
     (
         vxref,
@@ -71,7 +72,7 @@ def setup_track(track):
     ) = interpolLUT(vx, vy, vz, s)
     T, e1, e2 = getRMFBasis(vxref, vyref, vzref, s)
 
-    n = int(s[-1] * 10)
+    n = int(s[-1] * n_knots)
     return {
         "s": resample_path(s, n),
         "x": resample_path(x, n),
@@ -605,7 +606,6 @@ Cd = 7.9379e-06  # [N/krpm^2] Drag coefficient
 Ct = 3.25e-4  # [N/krpm^2] Thrust coefficient
 dq = 92e-3  # [m] distance between motors' center
 l = dq / 2  # [m] distance between motors' center and the axis of rotation
-n_knots = 10
 
 max_vel = 3.0
 max_s_dot = 3.0
