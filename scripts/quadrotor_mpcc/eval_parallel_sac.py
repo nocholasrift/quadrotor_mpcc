@@ -13,7 +13,7 @@ from common import *
 MODEL_PATH = "./results/best_model/best_model.zip"
 # TRACK_TO_EVAL = "race_uzh_19g"
 # TRACK_TO_EVAL = "3d_square"
-TRACK_TO_EVAL = "straight_line"
+TRACK_TO_EVAL = "figure8"
 LOOP = False
 N_EPISODES = 1
 MAX_STEPS = 300

@@ -38,7 +38,9 @@ class VolaDroneEnv(gym.Env):
 
         # self.pcl = []
         try:
-            self.pcl = load_pcl_from_env(f"../../resources/envs/{track}.yaml", pcl_density)
+            self.pcl = load_pcl_from_env(
+                f"../../resources/envs/{track}.yaml", pcl_density
+            )
         except:
             self.pcl = []
 
@@ -47,10 +49,19 @@ class VolaDroneEnv(gym.Env):
         self.should_normalize_obs = normalize_obs
 
         self.alpha0_init = 10.0
-        self.alpha1_init = 1.0
+        self.alpha1_init = 10.0
 
-        self.alpha0 = self.alpha0_init
-        self.alpha1 = self.alpha1_init
+        # Log-space gain setup for delta-action learning
+        self.alpha_min = np.array([min_alpha, min_alpha], dtype=np.float32)
+        self.alpha_max = np.array([max_alpha, max_alpha], dtype=np.float32)
+        self.log_alpha_min = np.log(self.alpha_min)
+        self.log_alpha_max = np.log(self.alpha_max)
+        self.max_dlog_alpha = np.array([0.10, 0.10], dtype=np.float32)
+
+        self.log_alphas = np.log(
+            np.array([self.alpha0_init, self.alpha1_init], dtype=np.float32)
+        )
+        self.alpha0, self.alpha1 = np.exp(self.log_alphas)
 
         self.renderer = None
 
@@ -62,11 +73,9 @@ class VolaDroneEnv(gym.Env):
         z = self.track_data["z"]
 
         self.traj_dense = setup_track(self.track, samples=100)
-        self.traj_xyzs = np.column_stack([
-            self.traj_dense["x"], 
-            self.traj_dense["y"], 
-            self.traj_dense["z"]
-        ])
+        self.traj_xyzs = np.column_stack(
+            [self.traj_dense["x"], self.traj_dense["y"], self.traj_dense["z"]]
+        )
 
         traj = np.stack([x, y, z], axis=1)
 
@@ -117,7 +126,7 @@ class VolaDroneEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(3 * self.M + 1,),
+            shape=(3 * self.M + 3,),  # +2 for log-alpha state, +1 for s_dot
             dtype=np.float32,
         )
 
@@ -148,8 +157,10 @@ class VolaDroneEnv(gym.Env):
         self.prev_s = 0
         self.step_count = 0
 
-        self.alpha0 = self.alpha0_init
-        self.alpha1 = self.alpha1_init
+        self.log_alphas = np.log(
+            np.array([self.alpha0_init, self.alpha1_init], dtype=np.float32)
+        )
+        self.alpha0, self.alpha1 = np.exp(self.log_alphas)
 
         for stage in range(self.N + 1):
             self.solver.set(stage, "x", self.state)
@@ -217,13 +228,17 @@ class VolaDroneEnv(gym.Env):
             loop=self.loop,
         )
 
-        # unnormed_action = action_unnormalize(action, min_alpha_dot, max_alpha_dot)
-        # self.alpha0 += unnormed_action[0]
-        if type(action) is np.ndarray:
-            unnormed_action = action_unnormalize(action, min_alpha, max_alpha)
-            self.alpha0 = unnormed_action[0]
-            self.alpha1 = unnormed_action[1]
-            # print(self.alpha0)
+        delta_log_action = np.zeros(2, dtype=np.float32)
+        if isinstance(action, np.ndarray):
+            action = np.clip(action, -1.0, 1.0)
+            delta_log_action = action * self.max_dlog_alpha
+
+            self.log_alphas = np.clip(
+                self.log_alphas + delta_log_action,
+                self.log_alpha_min,
+                self.log_alpha_max,
+            )
+            self.alpha0, self.alpha1 = np.exp(self.log_alphas)
 
         start = time.time()
 
@@ -345,7 +360,7 @@ class VolaDroneEnv(gym.Env):
             or self.step_count >= self.max_step
         )
 
-        reward = self._get_reward(gym_obs, self.state[-2], terminated, status)
+        reward = self._get_reward(gym_obs, self.state[-2], terminated, status, delta_log_action)
 
         # print("un-norm", gym_obs)
         if self.should_normalize_obs:
@@ -404,15 +419,18 @@ class VolaDroneEnv(gym.Env):
 
             obs.extend([cbf, lfh, hddot])
 
+        # Normalized current gains in [-1, 1] so policy knows where it is
+        alpha_obs = 2.0 * (self.log_alphas - self.log_alpha_min) / (
+            self.log_alpha_max - self.log_alpha_min + 1e-8
+        ) - 1.0
+        obs.extend(alpha_obs.tolist())
+
         obs.append(s_dot)
-        # print("len: ", s)
-        # obs.append(self.alpha0)
-        # obs.append(self.alpha1)
 
         obs = np.nan_to_num(obs, nan=0.0, posinf=0.0, neginf=0.0)
         return np.array(obs, dtype=np.float32)
 
-    def _get_reward(self, obs, s, terminated, solver_status):
+    def _get_reward(self, obs, s, terminated, solver_status, delta_log_action=None):
 
         # 1. Progress reward
         s_dot = obs[-1]
@@ -429,7 +447,7 @@ class VolaDroneEnv(gym.Env):
 
             # Check constraint: Lfh + alpha*cbf >= 0
             constraint_value = self.alpha0 * cbf + self.alpha1 * lfh + hddot
-            constraint_value = np.clip(constraint_value, -10.0, 5.0)
+            # constraint_value = np.clip(constraint_value, -10.0, 5.0)
 
             if constraint_value < 0:  # Violation
                 # Penalize proportional to violation magnitude
@@ -438,7 +456,7 @@ class VolaDroneEnv(gym.Env):
         # 3. Alpha regularization (prefer small alpha for efficiency)
         # alpha typically in [0.1, 10]
         alphas = np.array([self.alpha0, self.alpha1])
-        alpha_reg = -0.05 * np.sum(alphas)
+        alpha_reg = -0.01 * np.sum(alphas)
         # alpha_reg = 0
 
         # 4. Feasibility penalties (keep alpha in bounds)
@@ -464,13 +482,19 @@ class VolaDroneEnv(gym.Env):
         # if self.n_consecutive_infeasibilities >= 3:
         #     solver_status_reward -= 1.0
 
+        # Action smoothness penalty
+        action_smooth_penalty = 0.0
+        if delta_log_action is not None:
+            action_smooth_penalty = -0.01 * float(np.sum(delta_log_action**2))
+
         if np.random.random() < 0.01:  # Log 1% of the time
             print(
                 f"Reward breakdown: progress={progress_reward:.2f}, "
                 f"cbf_viol={cbf_violation_penalty:.2f}, "
                 f"alpha_reg={alpha_reg:.2f}, "
-                f"feasibility={feasibility_penalty:.2f}"
-                f"solver_reward={solver_status_reward:.2f}"
+                f"feasibility={feasibility_penalty:.2f}, "
+                f"solver_reward={solver_status_reward:.2f}, "
+                f"action_smooth={action_smooth_penalty:.2f}"
             )
 
         # Total reward
@@ -481,6 +505,7 @@ class VolaDroneEnv(gym.Env):
             + feasibility_penalty
             # + terminal_bonus
             + solver_status_reward
+            + action_smooth_penalty
         )
 
         return reward

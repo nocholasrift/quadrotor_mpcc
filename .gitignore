@@ -8,5 +8,6 @@ cache/
 acados_ocp.json
 
 *.zip
+*.npz
 *.png
 stats/
