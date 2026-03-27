@@ -49,7 +49,7 @@ class VolaDroneEnv(gym.Env):
         self.should_normalize_obs = normalize_obs
 
         self.alpha0_init = 10.0
-        self.alpha1_init = 10.0
+        self.alpha1_init = 9.0
 
         # Log-space gain setup for delta-action learning
         self.alpha_min = np.array([min_alpha, min_alpha], dtype=np.float32)
@@ -138,10 +138,14 @@ class VolaDroneEnv(gym.Env):
         return load_gates(track)
 
     def normalize_obs(self, obs, mean, std):
-        obs[:-1] = (obs[:-1] - mean[:-1]) / std[:-1]
-        # obs[-1] = 2 * (obs[-2] / self.track_data["s"][-1]) - 1.0
-        # obs[-2] = 2 * (obs[-2] - min_alpha) / (max_alpha - min_alpha) - 1
-        # obs[-1] = 2 * (obs[-1] - min_alpha) / (max_alpha - min_alpha) - 1
+        obs[:-3] = (obs[:-3] - mean[:-3]) / std[:-3]
+
+        # log-alpha: true bounds known
+        obs[-3] = 2.0 * (obs[-3] - self.log_alpha_min[0]) / (self.log_alpha_max[0] - self.log_alpha_min[0]) - 1.0
+        obs[-2] = 2.0 * (obs[-2] - self.log_alpha_min[1]) / (self.log_alpha_max[1] - self.log_alpha_min[1]) - 1.0
+
+        # s_dot: true bounds [0, max_s_dot]
+        obs[-1] = 2.0 * (obs[-1] / max_s_dot) - 1.0
 
         return obs
 
@@ -419,11 +423,11 @@ class VolaDroneEnv(gym.Env):
 
             obs.extend([cbf, lfh, hddot])
 
-        # Normalized current gains in [-1, 1] so policy knows where it is
-        alpha_obs = 2.0 * (self.log_alphas - self.log_alpha_min) / (
-            self.log_alpha_max - self.log_alpha_min + 1e-8
-        ) - 1.0
-        obs.extend(alpha_obs.tolist())
+        # Normalized current gains in [-1, 1]
+        # alpha_obs = 2.0 * (self.log_alphas - self.log_alpha_min) / (
+        #     self.log_alpha_max - self.log_alpha_min + 1e-8
+        # ) - 1.0
+        obs.extend(self.log_alphas.tolist())
 
         obs.append(s_dot)
 
@@ -487,15 +491,15 @@ class VolaDroneEnv(gym.Env):
         if delta_log_action is not None:
             action_smooth_penalty = -0.01 * float(np.sum(delta_log_action**2))
 
-        if np.random.random() < 0.01:  # Log 1% of the time
-            print(
-                f"Reward breakdown: progress={progress_reward:.2f}, "
-                f"cbf_viol={cbf_violation_penalty:.2f}, "
-                f"alpha_reg={alpha_reg:.2f}, "
-                f"feasibility={feasibility_penalty:.2f}, "
-                f"solver_reward={solver_status_reward:.2f}, "
-                f"action_smooth={action_smooth_penalty:.2f}"
-            )
+        # if np.random.random() < 0.01:  # Log 1% of the time
+        #     print(
+        #         f"Reward breakdown: progress={progress_reward:.2f}, "
+        #         f"cbf_viol={cbf_violation_penalty:.2f}, "
+        #         f"alpha_reg={alpha_reg:.2f}, "
+        #         f"feasibility={feasibility_penalty:.2f}, "
+        #         f"solver_reward={solver_status_reward:.2f}, "
+        #         f"action_smooth={action_smooth_penalty:.2f}"
+        #     )
 
         # Total reward
         reward = (
