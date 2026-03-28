@@ -50,69 +50,113 @@ def get_free_tube(poly_deg, max_radius):
 
 
 def NLP(poly_deg, occ_points, traj_len, max_radius, LP):
-
+    # 1. Standard Sweep for bounds
     n_sweep = 100
-
-    # define variables X = [[a c], [c b]]
-    a = cp.Variable(poly_deg + 1)
-    b = cp.Variable(poly_deg + 1)
-    c = cp.Variable(poly_deg + 1)
-    d = cp.Variable(poly_deg + 1)
-    coeffs = {"a": a, "b": b, "c": c, "d": d}
-    # coeffs = {"a": a, "b": b}
-
-    # occ_param = cp.Parameter((max_occ_points, 3))
+    a, b, c, d = [cp.Variable(poly_deg + 1) for _ in range(4)]
+    
     xi_sweep = np.linspace(0, 1, n_sweep)
     Phi_sweep = get_cheby_basis(xi_sweep, poly_deg)
-
-    a_sweep = Phi_sweep @ a
-    b_sweep = Phi_sweep @ b
-    c_sweep = Phi_sweep @ c
-    d_sweep = Phi_sweep @ d
-
-    cost = cp.sum(a_sweep + b_sweep)
     min_bound = 1 / (max_radius**2)
-    constraints = [a_sweep >= min_bound, b_sweep >= min_bound]
-    # constraints = [c_sweep == 0, d_sweep == 0]
 
+    # 2. Add Cage Points
     cage_pts = get_cage(xi_sweep * traj_len, max_radius)
-    occ_points = np.vstack([occ_points, cage_pts])
+    all_occ = np.vstack([occ_points, cage_pts]) # Shape: (59 + 100, 3)
 
-    xi_occ = occ_points[:, 0] / traj_len
-    w1 = occ_points[:, 1]
-    w2 = occ_points[:, 2]
-
+    # 3. Vectorized Basis Pre-weighting (THE SPEEDUP)
+    xi_occ = all_occ[:, 0] / traj_len
+    w1 = all_occ[:, 1]
+    w2 = all_occ[:, 2]
+    
     Phi_occ = get_cheby_basis(xi_occ, poly_deg)
-    a_occ = Phi_occ @ a
-    b_occ = Phi_occ @ b
-    c_occ = Phi_occ @ c
-    d_occ = Phi_occ @ d
+    
+    # Pre-multiply the basis by the constants in NumPy (Vectorized)
+    # This creates a "weighted basis" where each row already accounts for w1^2, w2, etc.
+    M_a = Phi_occ * (w1**2)[:, None]
+    M_b = Phi_occ * (w2**2)[:, None]
+    M_c = Phi_occ * w1[:, None]
+    M_d = Phi_occ * w2[:, None]
 
-    # Vectorized ellipse constraint: a*w1^2 + b*w2^2 + c*w1 + d*w2 >= 1
-    # We use cp.multiply for element-wise multiplication of expressions
-    occ_expr = (
-        cp.multiply(np.square(w1), a_occ)
-        + cp.multiply(np.square(w2), b_occ)
-        + cp.multiply(w1, c_occ)
-        + cp.multiply(w2, d_occ)
-    )
-    # occ_expr = (cp.multiply(np.square(w1), a_occ) +
-    #             cp.multiply(np.square(w2), b_occ))
+    # Now the constraint is a single linear operation: (N_pts x N_coeffs) @ (N_coeffs x 1)
+    occ_expr = M_a @ a + M_b @ b + M_c @ c + M_d @ d
 
-    # constraints += [d_occ == 0]
-    # constraints += [c_occ == 0]
-    # constraints += [c_sweep <= 2*max_radius]
-    # constraints += [c_sweep >= -2*max_radius]
-    # constraints += [d_sweep <= 2*max_radius]
-    # constraints += [d_sweep >= -2*max_radius]
+    constraints = [
+        Phi_sweep @ a >= min_bound, 
+        Phi_sweep @ b >= min_bound,
+        occ_expr >= 1
+    ]
 
-    constraints += [occ_expr >= 1]
-
-    # define problem
+    # Minimize sum of semi-axes (equivalent to maximizing volume)
+    cost = cp.sum(Phi_sweep @ a + Phi_sweep @ b)
+    
+    # Use ECOS or OSQP for speed; they handle these small LPs/QPs instantly
     prob = cp.Problem(cp.Minimize(cost), constraints)
 
     return prob, [a, b, c, d]
-    # return prob, [a, b]
+# def NLP(poly_deg, occ_points, traj_len, max_radius, LP):
+#
+#     n_sweep = 100
+#     print(occ_points.shape)
+#
+#     # define variables X = [[a c], [c b]]
+#     a = cp.Variable(poly_deg + 1)
+#     b = cp.Variable(poly_deg + 1)
+#     c = cp.Variable(poly_deg + 1)
+#     d = cp.Variable(poly_deg + 1)
+#     coeffs = {"a": a, "b": b, "c": c, "d": d}
+#     # coeffs = {"a": a, "b": b}
+#
+#     # occ_param = cp.Parameter((max_occ_points, 3))
+#     xi_sweep = np.linspace(0, 1, n_sweep)
+#     Phi_sweep = get_cheby_basis(xi_sweep, poly_deg)
+#
+#     a_sweep = Phi_sweep @ a
+#     b_sweep = Phi_sweep @ b
+#     c_sweep = Phi_sweep @ c
+#     d_sweep = Phi_sweep @ d
+#
+#     cost = cp.sum(a_sweep + b_sweep)
+#     min_bound = 1 / (max_radius**2)
+#     constraints = [a_sweep >= min_bound, b_sweep >= min_bound]
+#     # constraints = [c_sweep == 0, d_sweep == 0]
+#
+#     cage_pts = get_cage(xi_sweep * traj_len, max_radius)
+#     occ_points = np.vstack([occ_points, cage_pts])
+#
+#     xi_occ = occ_points[:, 0] / traj_len
+#     w1 = occ_points[:, 1]
+#     w2 = occ_points[:, 2]
+#
+#     Phi_occ = get_cheby_basis(xi_occ, poly_deg)
+#     a_occ = Phi_occ @ a
+#     b_occ = Phi_occ @ b
+#     c_occ = Phi_occ @ c
+#     d_occ = Phi_occ @ d
+#
+#     # Vectorized ellipse constraint: a*w1^2 + b*w2^2 + c*w1 + d*w2 >= 1
+#     # We use cp.multiply for element-wise multiplication of expressions
+#     occ_expr = (
+#         cp.multiply(np.square(w1), a_occ)
+#         + cp.multiply(np.square(w2), b_occ)
+#         + cp.multiply(w1, c_occ)
+#         + cp.multiply(w2, d_occ)
+#     )
+#     # occ_expr = (cp.multiply(np.square(w1), a_occ) +
+#     #             cp.multiply(np.square(w2), b_occ))
+#
+#     # constraints += [d_occ == 0]
+#     # constraints += [c_occ == 0]
+#     # constraints += [c_sweep <= 2*max_radius]
+#     # constraints += [c_sweep >= -2*max_radius]
+#     # constraints += [d_sweep <= 2*max_radius]
+#     # constraints += [d_sweep >= -2*max_radius]
+#
+#     constraints += [occ_expr >= 1]
+#
+#     # define problem
+#     prob = cp.Problem(cp.Minimize(cost), constraints)
+#
+#     return prob, [a, b, c, d]
+#     # return prob, [a, b]
 
 
 def get_cage(xi_sweep, max_radius):
@@ -333,3 +377,82 @@ def get_ellipse_points(width, height, angle, theta):
     pt = R_ellipse @ rot
 
     return pt
+
+
+class FastTubeOptimizer:
+    def __init__(self, poly_deg, max_occ_points=500, n_sweep=100):
+        self.poly_deg = poly_deg
+        self.n_sweep = n_sweep
+        self.n_cage = n_sweep
+        self.max_total_points = max_occ_points + self.n_cage
+        
+        n = poly_deg + 1
+        
+        # 1. Precompute static basis
+        self.xi_sweep = np.linspace(0, 1, self.n_sweep)
+        self.Phi_sweep = get_cheby_basis(self.xi_sweep, self.poly_deg)
+        
+        # 2. Variables
+        self.x = cp.Variable(4 * n)
+        self.a = self.x[0:n]
+        self.b = self.x[n:2*n]
+        self.c = self.x[2*n:3*n]
+        self.d = self.x[3*n:4*n]
+        
+        # 3. Parameters (These act as fast-update placeholders)
+        self.M_param = cp.Parameter((self.max_total_points, 4 * n))
+        self.rhs_param = cp.Parameter(self.max_total_points)
+        self.min_bound_param = cp.Parameter(nonneg=True)
+        
+        # 4. Constraints & Problem (Built ONLY ONCE)
+        constraints = [
+            self.Phi_sweep @ self.a >= self.min_bound_param,
+            self.Phi_sweep @ self.b >= self.min_bound_param,
+            self.M_param @ self.x >= self.rhs_param
+        ]
+        
+        weights = np.exp(-3 * self.xi_sweep) * 9.0 + 1.0
+        cost = cp.sum(cp.multiply(weights, self.Phi_sweep @ self.a + self.Phi_sweep @ self.b))
+        # cost = cp.sum(self.Phi_sweep @ self.a + self.Phi_sweep @ self.b)
+        self.prob = cp.Problem(cp.Minimize(cost), constraints)
+
+    def solve(self, occ_points, traj_len, max_radius, solver=cp.CLARABEL):
+        # --- 1. Fast NumPy Matrix Construction ---
+        self.min_bound_param.value = 1.0 / (max_radius**2)
+        
+        cage_pts = get_cage(self.xi_sweep * traj_len, max_radius)
+        all_occ = np.vstack([occ_points, cage_pts])
+        
+        n_actual = all_occ.shape[0]
+        if n_actual > self.max_total_points:
+            raise ValueError(f"Too many points! Increase max_occ_points. Got {n_actual}, max is {self.max_total_points}")
+            
+        xi_occ = all_occ[:, 0] / traj_len
+        w1 = all_occ[:, 1]
+        w2 = all_occ[:, 2]
+        
+        Phi_occ = get_cheby_basis(xi_occ, self.poly_deg)
+        
+        M_actual = np.hstack([
+            Phi_occ * (w1**2)[:, None],
+            Phi_occ * (w2**2)[:, None],
+            Phi_occ * w1[:, None],
+            Phi_occ * w2[:, None]
+        ])
+        
+        # --- 2. Pad the matrices to the fixed Parameter size ---
+        # We reuse the same memory buffers to avoid allocation overhead
+        M_padded = np.zeros((self.max_total_points, 4 * (self.poly_deg + 1)))
+        M_padded[:n_actual, :] = M_actual
+        self.M_param.value = M_padded
+        
+        # RHS is 1 for real points, -1 for padded points (so 0 >= -1 is ignored)
+        rhs_padded = -np.ones(self.max_total_points)
+        rhs_padded[:n_actual] = 1.0
+        self.rhs_param.value = rhs_padded
+        
+        # --- 3. Solve ---
+        # warm_start=True uses the previous solution as an initial guess, speeding up Clarabel/Gurobi
+        self.prob.solve(solver=solver, warm_start=True)
+        
+        return self.a.value, self.b.value, self.c.value, self.d.value

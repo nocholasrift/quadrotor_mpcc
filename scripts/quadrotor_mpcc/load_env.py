@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-def load_pcl_from_env(yaml_path, samples_per_m2=20):
+def load_pcl_from_env(yaml_path, samples_per_m2=10):
     with open(yaml_path, 'r') as f:
         config = yaml.safe_load(f)
 

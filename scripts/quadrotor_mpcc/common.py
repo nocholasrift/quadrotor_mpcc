@@ -575,6 +575,7 @@ def get_corridor_pts(ax, track_data, coeffs, alpha=0.2, n_sweep=100, stride=1, n
 
     return np.array(ellipse_pts_world)
 
+
 def action_unnormalize(val, min, max):
     return (val + 1.0) * (max - min) / 2.0 + min
 
@@ -610,12 +611,12 @@ l = dq / 2  # [m] distance between motors' center and the axis of rotation
 max_vel = 3.0
 max_s_dot = 3.0
 
-Tf = 2.5
+Tf = 2.0
 N = 40
 
 
 min_alpha = 0.1
-max_alpha = 10.0
+max_alpha = 5.0
 
 min_alpha_dot = -3.0
 max_alpha_dot = 3.0

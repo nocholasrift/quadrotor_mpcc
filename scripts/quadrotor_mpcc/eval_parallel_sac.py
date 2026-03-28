@@ -12,8 +12,8 @@ from common import *
 # 1. Point to your best model or a specific checkpoint
 MODEL_PATH = "./results/best_model/best_model.zip"
 # TRACK_TO_EVAL = "race_uzh_19g"
-# TRACK_TO_EVAL = "3d_square"
-TRACK_TO_EVAL = "figure8"
+TRACK_TO_EVAL = "3d_square"
+# TRACK_TO_EVAL = "figure8"
 LOOP = False
 N_EPISODES = 1
 MAX_STEPS = 300

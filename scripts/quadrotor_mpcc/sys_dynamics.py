@@ -219,66 +219,6 @@ class SysDyn:
         w2_shifted = err_e2 - cy
 
         cbf = 1 - (e_axis_a * w1_shifted**2 + e_axis_b * w2_shifted**2)
-        # cbf = 1 - (e_axis_a * err_e1**2 +
-        #            e_axis_b * err_e2**2 +
-        #            e_offset_a * err_e1 +
-        #            e_offset_b * err_e2)
-
-        # perp_dir = e_perp / (
-        #     ca.norm_2(e_perp) + 1e-8
-        # )  # Unit vector pointing away from path
-        #
-        # thrust_dir = Rq[:, 2]
-        # thrust_perp = (
-        #     thrust_dir - ca.dot(thrust_dir, tr) * tr
-        # )  # Remove tangential component
-        # thrust_toward_boundary = ca.dot(thrust_perp, perp_dir)
-        #
-        # v_perp = v - ca.dot(v, tr) * tr  # Remove tangential component
-        # v_toward_boundary = ca.dot(v_perp, perp_dir)
-        #
-        # beta = 0.05
-        # # p = thrust_toward_boundary  + beta * v_toward_boundary
-        # p = beta * v_toward_boundary
-        # p_clamped = ca.fmax(ca.fmin(p, 1.0), -1.0)
-        # cbf = h * ca.exp(-p_clamped)
-
-        # radius = 0.5
-        # h = 1 - (b1 / radius) ** 2 - (b2 / radius) ** 2
-        #
-        # thrust_dir = Rq[:, 2]
-        #
-        # contour_mag = ca.sqrt(b1**2 + b2**2 + 1e-8)
-        # boundary_dir_3d = (b1 * e1 + b2 * e2) / contour_mag
-        #
-        # thrust_toward_boundary = ca.dot(thrust_dir, boundary_dir_3d)
-        #
-        # v_toward_boundary = ca.dot(v, boundary_dir_3d)
-        #
-        # p = thrust_toward_boundary + 0.05 * v_toward_boundary
-        # p_sat = ca.fmax(ca.fmin(p, 1.0), -1.0)
-        # cbf = h * ca.exp(-p_sat)
-
-        # v_e1 = ca.dot(e1, v)
-        # v_e2 = ca.dot(e2, v)
-
-        # contour_mag = ca.sqrt(b1**2 + b2**2 + 1e-8)
-        # boundary_dir_e1 = b1 / contour_mag
-        # boundary_dir_e2 = b2 / contour_mag
-        #
-        # v_toward_boundary = boundary_dir_e1 * v_e1 + boundary_dir_e2 * v_e2
-        #
-        # v_speed = ca.sqrt(ca.dot(v, v) + 1e-8)
-        # p = v_toward_boundary + 0.05 * v_speed
-        #
-        # cbf = h * ca.exp(-p)
-
-        z_b = Rq[:, 2]
-        f_danger = 0.5 * ca.dot(e_perp, v) + 0.1 * ca.dot(e_perp, z_b)
-
-        # h_pos = radius**2 - ca.dot(e_perp, e_perp)
-        # cbf = h_pos * ca.exp(-f_danger)
-        # cbf = h_pos / (1.0 + f_danger**2)
 
         grad_h = ca.jacobian(cbf, x)
         Lfh = grad_h @ F

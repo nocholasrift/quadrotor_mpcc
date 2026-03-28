@@ -17,7 +17,7 @@ import numpy as np
 # ==============================================================================
 
 # FRAME_MODE = "RMF"       # "RMF" or "FS"
-FRAME_MODE = "FS"       # "RMF" or "FS"
+FRAME_MODE = "RMF"       # "RMF" or "FS"
 
 y_mult = 1.0
 z_mult = 1.0
@@ -56,8 +56,8 @@ LABEL_INDICES    = [N_FRAMES-1]
 # Window centered on the inflection at t = pi
 HALF_WINDOW = 1.3        # show +/- this many radians around pi
 
-VIEW_ELEV = 40
-VIEW_AZIM = -136
+VIEW_ELEV = -8
+VIEW_AZIM = -97
 
 # ==============================================================================
 #  Palette

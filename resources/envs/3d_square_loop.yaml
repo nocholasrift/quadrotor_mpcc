@@ -37,3 +37,4 @@ obstacles:
   - <<: *corner_pillar
     position: [0.0, -4.2, 0.0] # Bottom straight
     rotation: [0, 0, 0]
+

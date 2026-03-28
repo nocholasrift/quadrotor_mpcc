@@ -1,46 +1,80 @@
+import os
+import time
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter
 from scipy.spatial import KDTree
 from common import *
 
+# ==========================================
+# GLOBAL STYLE CONFIGURATION (CDC/IEEE LOOK)
+# ==========================================
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif",
+    "font.serif": [],          
+    "axes.labelweight": "bold",
+    "axes.titleweight": "bold",
+    "font.weight": "bold",
+    "axes.titlesize": 16,
+    "axes.labelsize": 14,
+    "legend.fontsize": 10,
+    "text.latex.preamble": r"\usepackage{amsmath} \usepackage{bm}"
+})
+
 class Renderer:
     # -------------------------------------------------------------------------
-    # COLOR CONFIG
+    # TUNABLE RENDER CONFIG
     # -------------------------------------------------------------------------
-    COLORS = {
-        'track':      '#888888',   # reference track dashes
-        'drone':      '#e63946',   # drone marker
-        'trail':      '#2a9d8f',   # flight trail
-        'horizon':    '#1d6fa4',   # MPC horizon prediction
-        'tube':       '#e76f51',   # corridor tube
-        'pcl':        'plasma',    # point cloud colormap
-        'alpha0':     '#2a9d8f',   # alpha_0 plot line
-        'alpha1':     '#1d6fa4',   # alpha_1 plot line
-        'cbf':        '#e63946',   # CBF plot line
-        'cbf_hline':  '#e76f51',   # CBF zero-line
-        'fig_bg':     '#f5f5f5',   # figure background
-        'ax_bg':      '#ffffff',   # 2D axes background
-        'pane':       '#ebebeb',   # 3D pane fill
-        'pane_edge':  '#cccccc',   # 3D pane edge
+    RENDER_CONFIG = {
+        "trail_width": 3.5,
+        "collision_width": 6.0,
+        "track_width": 4.0,
+        "horizon_width": 2.5,
+        
+        "pcl_size": [4.0, 1.0, 1.0],
+        "pcl_alpha": 0.25,
+        "pcl_radius": 25.0,
+        "tube_n_sweep": 25,          
+        
+        # Camera Settings (Iso View only)
+        "iso_elev": 67,             
+        "iso_azim": -135,            
+        
+        "pad_x": 6.0,
+        "pad_y": 6.0,
+        "pad_z_low": 2.0,
+        "pad_z_high": 12.0,
     }
 
-    PCL_SIZE  = [4.0, 0.5, 0.5]
-    PCL_ALPHA = [0.3, 0.3, 0.3]
-    COLLISION_RADIUS = 0.3
+    COLORS = {
+        "track": "#888888",  
+        "drone": "#e63946",  
+        "trail": "#2a9d8f",  
+        "horizon": "#1d6fa4",
+        "tube": "#e76f51",   
+        "pcl": "viridis",     
+        "alpha0": "#2a9d8f", 
+        "alpha1": "#1d6fa4", 
+        "cbf": "#e63946",    
+        "cbf_hline": "#e76f51",
+        "fig_bg": "#f5f5f5", 
+        "ax_bg": "#ffffff",  
+        "pane": "#ebebeb",   
+    }
 
     def __init__(self, env, save_video=False, video_name="vola_drone_sim.mp4", pcl_sample_rate=0.2):
         self.env = env
         self.save_video = save_video
+        R = self.RENDER_CONFIG
+        C = self.COLORS
 
-        # Ensure trajectory is (N,3) for distance calcs
         self.env.traj_xyzs = np.column_stack([
             self.env.traj_dense["x"],
             self.env.traj_dense["y"],
             self.env.traj_dense["z"],
         ])
 
-        # Pre-downsample point cloud
         if len(self.env.pcl) > 0:
             indices = np.random.choice(len(self.env.pcl), int(pcl_sample_rate * len(self.env.pcl)), replace=False)
             self.sampled_pcl = self.env.pcl[indices]
@@ -50,40 +84,47 @@ class Renderer:
             self.pcl_kdtree = None
 
         self.collision_flags = []
-
-        # Calculate global bounds
         track = self.env.track_data
         self.bounds = {
-            'x': (np.min(track["x"]) - 5, np.max(track["x"]) + 5),
-            'y': (np.min(track["y"]) - 5, np.max(track["y"]) + 5),
-            'z': (np.min(track["z"]) - 2, np.max(track["z"]) + 10)
+            "x": (np.min(track["x"]) - R["pad_x"], np.max(track["x"]) + R["pad_x"]),
+            "y": (np.min(track["y"]) - R["pad_y"], np.max(track["y"]) + R["pad_y"]),
+            "z": (np.min(track["z"]) - R["pad_z_low"], np.max(track["z"]) + R["pad_z_high"]),
         }
 
-        C = self.COLORS
-        plt.style.use('default')
+        self.fig_geo = plt.figure("Geometry", figsize=(14, 7), facecolor=C["fig_bg"])
 
-        # ── Window 1: Geometry ────────────────────────────────────────────────
-        self.fig_geo = plt.figure("Geometry", figsize=(16, 8), facecolor=C['fig_bg'])
-        gs_geo = self.fig_geo.add_gridspec(2, 2, height_ratios=[1, 1], width_ratios=[3, 3.2], hspace=0.05, wspace=0.05)
+        gs_geo = self.fig_geo.add_gridspec(
+            2, 2,
+            width_ratios=[2.2, 1],   # iso clearly larger, but not extreme
+            height_ratios=[1, 1],    # ensures top + side split evenly
+            wspace=0.02,
+            hspace=0.02
+        )
 
-        self.ax_iso  = self.fig_geo.add_subplot(gs_geo[0:2, 0], projection='3d', facecolor=C['fig_bg'])
-        self.ax_top  = self.fig_geo.add_subplot(gs_geo[0,   1], projection='3d', facecolor=C['fig_bg'])
-        self.ax_side = self.fig_geo.add_subplot(gs_geo[1,   1], projection='3d', facecolor=C['fig_bg'])
+        self.fig_geo.subplots_adjust(
+            left=0.01, right=0.99,
+            bottom=0.01, top=0.99
+        )
 
-        # ── Window 2: Telemetry ───────────────────────────────────────────────
-        self.fig_telem = plt.figure("Telemetry", figsize=(11, 8), facecolor=C['fig_bg'])
-        gs_telem = self.fig_telem.add_gridspec(2, 1, height_ratios=[1, 1], hspace=0.35)
+        self.ax_iso  = self.fig_geo.add_subplot(gs_geo[:, 0], projection="3d", facecolor=C["fig_bg"])
+        self.ax_top  = self.fig_geo.add_subplot(gs_geo[0, 1], projection="3d", facecolor=C["fig_bg"])
+        self.ax_side = self.fig_geo.add_subplot(gs_geo[1, 1], projection="3d", facecolor=C["fig_bg"])
+        # self.fig_geo = plt.figure("Geometry", figsize=(14, 7), facecolor=C["fig_bg"])
+        # gs_geo = self.fig_geo.add_gridspec(2, 2, width_ratios=[2, 1.2], hspace=0.1, wspace=0.1)
+        # self.fig_geo.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
+        #
+        # self.ax_iso = self.fig_geo.add_subplot(gs_geo[:, 0], projection="3d", facecolor=C["fig_bg"])
+        # self.ax_top = self.fig_geo.add_subplot(gs_geo[0, 1], projection="3d", facecolor=C["fig_bg"])
+        # self.ax_side = self.fig_geo.add_subplot(gs_geo[1, 1], projection="3d", facecolor=C["fig_bg"])
 
-        self.ax_alpha0 = self.fig_telem.add_subplot(gs_telem[0])
-        self.ax_cbf    = self.fig_telem.add_subplot(gs_telem[1])
-
-        self.collision_text = self.fig_telem.text(0.5, 0.97, '', ha='center', va='top', fontsize=13, fontweight='bold', color='#e63946', transform=self.fig_telem.transFigure)
+        self.fig_telem = plt.figure("Telemetry", figsize=(10, 7), facecolor=C["fig_bg"])
+        gs_telem = self.fig_telem.add_gridspec(2, 1, hspace=0.4)
+        self.ax_alpha = self.fig_telem.add_subplot(gs_telem[0])
+        self.ax_cbf = self.fig_telem.add_subplot(gs_telem[1])
 
         self.axes = [self.ax_iso, self.ax_top, self.ax_side]
-        self.history = []
         self.alpha_hist = {"alpha0": [], "alpha1": []}
-        self.cbf_hist = []
-        self.time_steps = []
+        self.cbf_hist, self.time_steps, self.history = [], [], []
 
         if self.save_video:
             self.writer = FFMpegWriter(fps=20, bitrate=4000)
@@ -93,140 +134,144 @@ class Renderer:
         self._style_axes()
 
     def _init_artists(self):
-        self.drone_markers = []
-        self.trails = []
-        self.collision_trails = []
-        self.horizons = []
-        self.pcl_plots = []
-        self.tube_plots = []
-
-        C = self.COLORS
+        self.drone_markers, self.trails, self.collision_trails = [], [], []
+        self.horizons, self.pcl_plots, self.tube_plots = [], [], []
+        C, R = self.COLORS, self.RENDER_CONFIG
 
         for i, ax in enumerate(self.axes):
-            ax.plot(self.env.track_data["x"], self.env.track_data["y"], self.env.track_data["z"], color=C['track'], linestyle='--', linewidth=1.5, alpha=0.3)
+            ax.plot(self.env.track_data["x"], self.env.track_data["y"], self.env.track_data["z"],
+                    color=C["track"], linestyle="--", linewidth=R["track_width"], alpha=0.5)
 
-            dm, = ax.plot([], [], [], 'o', color=C['drone'], markersize=12 if i == 0 else 8, markeredgecolor='white', markeredgewidth=1.5, zorder=100)
-            tr, = ax.plot([], [], [], color=C['trail'], linewidth=2.5 if i == 0 else 2, alpha=0.8, zorder=50)
-            ct, = ax.plot([], [], [], color='#ff0000', linewidth=3.5 if i == 0 else 2.5, alpha=0.95, zorder=55)
-            hz, = ax.plot([], [], [], color=C['horizon'], linewidth=2, linestyle='--', alpha=0.6, zorder=40)
-            pc = ax.scatter([], [], [], s=self.PCL_SIZE[i], alpha=self.PCL_ALPHA[i], cmap=C['pcl'], vmin=self.bounds['z'][0], vmax=self.bounds['z'][1])
-            tp = ax.scatter([], [], [], s=6 if i == 0 else 3, alpha=0.15, color=C['tube'], zorder=10)
+            (dm,) = ax.plot([], [], [], "o", color=C["drone"], markersize=10 if i==0 else 6, 
+                           markeredgecolor="white", markeredgewidth=1.0, zorder=100)
+            (tr,) = ax.plot([], [], [], color=C["trail"], linewidth=R["trail_width"], zorder=50)
+            (ct,) = ax.plot([], [], [], color="#ff0000", linewidth=R["collision_width"], zorder=55)
+            (hz,) = ax.plot([], [], [], color=C["horizon"], linewidth=R["horizon_width"], linestyle="--", alpha=0.6)
+            
+            pc = ax.scatter([], [], [], c=[], s=R["pcl_size"][i], alpha=R["pcl_alpha"], cmap=C["pcl"], zorder=5)
+            tp = ax.scatter([], [], [], s=6 if i == 0 else 3, alpha=0.15, color=C["tube"], zorder=10)
 
-            for item, lst in zip([dm, tr, ct, hz, pc, tp], [self.drone_markers, self.trails, self.collision_trails, self.horizons, self.pcl_plots, self.tube_plots]):
+            for item, lst in zip([dm, tr, ct, hz, pc, tp], 
+                                 [self.drone_markers, self.trails, self.collision_trails, 
+                                  self.horizons, self.pcl_plots, self.tube_plots]):
                 lst.append(item)
-
-        title_style = {'fontsize': 12, 'fontweight': 'bold', 'color': '#222222', 'pad': 8}
-        self.ax_iso.set_title("Isometric View", **title_style)
-        self.ax_top.set_title("Top View",  **title_style)
-        self.ax_side.set_title("Side View", **title_style)
 
     def _style_axes(self):
         for ax in self.axes:
+            ax.xaxis.pane.set_facecolor(self.COLORS["pane"])
+            ax.yaxis.pane.set_facecolor(self.COLORS["pane"])
+            ax.zaxis.pane.set_facecolor(self.COLORS["pane"])
             ax.grid(False)
-            ax.xaxis.pane.fill = ax.yaxis.pane.fill = ax.zaxis.pane.fill = True
-            ax.xaxis.pane.set_facecolor(self.COLORS['pane'])
-            ax.yaxis.pane.set_facecolor(self.COLORS['pane'])
-            ax.zaxis.pane.set_facecolor(self.COLORS['pane'])
-            ax.tick_params(colors='#333333', labelsize=8)
-            if ax != self.ax_iso:
-                ax.set_xticklabels([]); ax.set_yticklabels([]); ax.set_zticklabels([])
+            ax.set_xticklabels([]); ax.set_yticklabels([]); ax.set_zticklabels([])
 
-    def _compute_cbf(self, state):
-        drone_pt = state[:3]
-        s_now = state[10]
-        s_array = self.env.traj_dense["s"]
-        idx = np.clip(np.searchsorted(s_array, s_now), 0, len(s_array) - 1)
+            # often makes 3D side views look tiny
+            ax.set_box_aspect(None)
 
-        closest = self.env.traj_xyzs[idx]
-        error = drone_pt - closest
-        e1 = np.array([self.env.traj_dense["e1x"][idx], self.env.traj_dense["e1y"][idx], self.env.traj_dense["e1z"][idx]])
-        e2 = np.array([self.env.traj_dense["e2x"][idx], self.env.traj_dense["e2y"][idx], self.env.traj_dense["e2z"][idx]])
-
-        normal_dist = np.sqrt(np.dot(error, e1)**2 + np.dot(error, e2)**2)
-        return float(self.env.max_tube_radius - normal_dist)
-
-    def _plot_cbf(self):
+    def _update_telemetry(self):
         C = self.COLORS
+        self.ax_alpha.clear()
+        self.ax_alpha.plot(self.time_steps, self.alpha_hist["alpha0"], color=C["alpha0"], label=r"$\bm{\alpha_0}$")
+        self.ax_alpha.plot(self.time_steps, self.alpha_hist["alpha1"], color=C["alpha1"], label=r"$\bm{\alpha_1}$")
+        self.ax_alpha.set_title(r"\textbf{Adaptation Parameters}")
+        self.ax_alpha.legend(loc="upper right")
+        self.ax_alpha.grid(True, alpha=0.2)
+
         self.ax_cbf.clear()
-        self.ax_cbf.set_facecolor(C['ax_bg'])
-        self.ax_cbf.plot(self.time_steps, self.cbf_hist, color=C['cbf'], linewidth=2, label='Tube Margin')
-        self.ax_cbf.axhline(y=0, color=C['cbf_hline'], linestyle='--', linewidth=1.5, alpha=0.7)
-        self.ax_cbf.set_ylabel('Margin (m)', fontsize=10); self.ax_cbf.set_xlabel('Timestep', fontsize=10)
-        self.ax_cbf.set_title('CBF Value (Safety Margin)', fontsize=12, fontweight='bold')
-        self.ax_cbf.grid(True, alpha=0.3, linestyle='--')
-        if len(self.cbf_hist) > 0 and min(self.cbf_hist) < 0.2:
-            self.ax_cbf.fill_between(self.time_steps, 0, 0.2, alpha=0.1, color='red')
-
-    def _update_telemetry(self, state, in_collision):
-        C = self.COLORS
-        self.collision_text.set_text('⚠ COLLISION DETECTED' if in_collision else '')
-
-        # Alpha plot
-        self.ax_alpha0.clear()
-        self.ax_alpha0.set_facecolor(C['ax_bg'])
-        self.ax_alpha0.plot(self.time_steps, self.alpha_hist["alpha0"], color=C['alpha0'], label=r"$\alpha_0$")
-        self.ax_alpha0.plot(self.time_steps, self.alpha_hist["alpha1"], color=C['alpha1'], label=r"$\alpha_1$")
-        self.ax_alpha0.legend(loc='upper right'); self.ax_alpha0.grid(True, alpha=0.3)
-        self.ax_alpha0.set_title('Alpha Values', fontsize=12, fontweight='bold')
-
-        # CBF plot
-        self.cbf_hist.append(self._compute_cbf(state))
-        self._plot_cbf()
-
-    def _get_trail_segments(self, hist, flags):
-        def build_segmented(pts, mask):
-            out = []
-            in_seg = False
-            for pt, m in zip(pts, mask):
-                if m:
-                    if not in_seg and out: out.append([np.nan, np.nan, np.nan])
-                    out.append(pt); in_seg = True
-                else: in_seg = False
-            return np.array(out) if out else np.empty((0, 3))
-        flags_arr = np.array(flags, dtype=bool)
-        return build_segmented(hist, ~flags_arr), build_segmented(hist, flags_arr)
+        self.ax_cbf.plot(self.time_steps, self.cbf_hist, color=C["cbf"], linewidth=2)
+        self.ax_cbf.axhline(0, color=C["cbf_hline"], linestyle="--")
+        self.ax_cbf.set_title(r"\textbf{Safety Margin } $\bm{h(\mathbf{x})}$")
+        self.ax_cbf.set_ylabel(r"\textbf{Margin [m]}")
+        self.ax_cbf.grid(True, alpha=0.2)
 
     def update(self):
         state = self.env.state
         curr_pos = state[:3]
         self.history.append(curr_pos.copy())
-        hist = np.array(self.history)
+        R = self.RENDER_CONFIG
 
-        if self.pcl_kdtree is not None:
-            dist, _ = self.pcl_kdtree.query(curr_pos)
-            in_collision = dist <= self.COLLISION_RADIUS
-        else: in_collision = False
-        self.collision_flags.append(in_collision)
-
-        horizon = np.array([self.env.solver.get(i, "x")[:3] for i in range(self.env.N + 1)])
+        # 1. Corridor & PCL Data Prep
         local_window = get_local_window_params(self.env.track_data, self.env.prev_s, 100, window_dist=self.env.track_horizon_window)
-        corridor_points = get_corridor_pts(self.ax_iso, local_window, self.env.tube_coeffs, n_sweep=20)
+        corridor_points = get_corridor_pts(self.ax_iso, local_window, self.env.tube_coeffs, n_sweep=R["tube_n_sweep"])
+        horizon = np.array([self.env.solver.get(i, "x")[:3] for i in range(self.env.N + 1)])
+        hist_arr = np.array(self.history)
 
-        trail_len = min(200, len(hist))
-        safe_pts, coll_pts = self._get_trail_segments(hist[-trail_len:], self.collision_flags[-trail_len:])
-
-        for i in range(3):
-            self.drone_markers[i].set_data([curr_pos[0]], [curr_pos[1]]); self.drone_markers[i].set_3d_properties([curr_pos[2]])
-            self.trails[i].set_data(safe_pts[:, 0], safe_pts[:, 1]); self.trails[i].set_3d_properties(safe_pts[:, 2])
-            self.collision_trails[i].set_data(coll_pts[:, 0], coll_pts[:, 1]); self.collision_trails[i].set_3d_properties(coll_pts[:, 2])
-            self.horizons[i].set_data(horizon[:, 0], horizon[:, 1]); self.horizons[i].set_3d_properties(horizon[:, 2])
+        # 2. Update Artists axis-by-axis
+        for i, ax in enumerate(self.axes):
+            # Update position artists
+            self.drone_markers[i].set_data([curr_pos[0]], [curr_pos[1]])
+            self.drone_markers[i].set_3d_properties([curr_pos[2]])
+            self.trails[i].set_data(hist_arr[:, 0], hist_arr[:, 1])
+            self.trails[i].set_3d_properties(hist_arr[:, 2])
+            self.horizons[i].set_data(horizon[:, 0], horizon[:, 1])
+            self.horizons[i].set_3d_properties(horizon[:, 2])
+            
+            # Update corridor
             self.tube_plots[i]._offsets3d = (corridor_points[:, 0], corridor_points[:, 1], corridor_points[:, 2])
+
+            # Update PCL
             if len(self.sampled_pcl) > 0:
-                self.pcl_plots[i]._offsets3d = (self.sampled_pcl[:, 0], self.sampled_pcl[:, 1], self.sampled_pcl[:, 2])
-                self.pcl_plots[i].set_array(self.sampled_pcl[:, 2])
+                mask = np.ones(len(self.sampled_pcl), dtype=bool)
+                if i == 0: # Iso local view
+                    mask = np.sum((self.sampled_pcl - curr_pos)**2, axis=1) < R["pcl_radius"]**2
+                
+                disp = self.sampled_pcl[mask]
+                if len(disp) > 0:
+                    self.pcl_plots[i]._offsets3d = (disp[:, 0], disp[:, 1], disp[:, 2])
+                    self.pcl_plots[i].set_array(disp[:, 2])
 
-        self.ax_iso.view_init(elev=25, azim=-60); self.ax_iso.set_xlim(self.bounds['x']); self.ax_iso.set_ylim(self.bounds['y']); self.ax_iso.set_zlim(self.bounds['z'])
-        self.ax_top.view_init(elev=90, azim=-90); self.ax_top.set_xlim(self.bounds['x']); self.ax_top.set_ylim(self.bounds['y']); self.ax_top.set_zlim(self.bounds['z'])
-        self.ax_side.view_init(elev=0, azim=-90); self.ax_side.set_xlim(self.bounds['x']); self.ax_side.set_ylim(self.bounds['y']); self.ax_side.set_zlim(self.bounds['z'])
+            # SET VIEW ANGLE INDIVIDUALLY
+            if i == 0: # ISO
+                ax.view_init(elev=R["iso_elev"], azim=R["iso_azim"])
+            elif i == 1: # TOP
+                ax.view_init(elev=90, azim=-90)
+            elif i == 2: # SIDE
+                ax.view_init(elev=0, azim=-90)
 
-        self.alpha_hist["alpha0"].append(self.env.alpha0); self.alpha_hist["alpha1"].append(self.env.alpha1)
+            ax.set_xlim(self.bounds["x"])
+            ax.set_ylim(self.bounds["y"])
+            ax.set_zlim(self.bounds["z"])
+
+        # 3. Telemetry Update
         self.time_steps.append(len(self.time_steps))
-        self._update_telemetry(state, in_collision)
+        self.alpha_hist["alpha0"].append(self.env.alpha0)
+        self.alpha_hist["alpha1"].append(self.env.alpha1)
 
-        self.fig_geo.canvas.draw(); self.fig_telem.canvas.draw()
-        plt.pause(0.0001)
+        # CBF calculation
+        drone_pt = self.env.state[:3]
+        diff = self.env.traj_xyzs - [drone_pt]
+        dists = np.linalg.norm(diff, axis=1)
+        champ_ind = np.argmin(dists)
+        
+        local_window = get_local_window_params(
+                self.env.track_data, 
+                self.env.state[10],
+                n_knots,
+                window_dist=self.env.track_horizon_window,
+                loop=False,
+        )
+        param_dict = build_acados_params(local_window, self.env.params, self.env.tube_coeffs)
+        x_i = self.env.solver.get(0, "x")
+        u_i = self.env.solver.get(0, "u")
+
+        hddot, lfh, cbf, LgLfh = self.env.cbf_func(
+            param_dict["x"], param_dict["y"], param_dict["z"],
+            param_dict["vx"], param_dict["vy"], param_dict["vz"],
+            param_dict["e1x"], param_dict["e1y"], param_dict["e1z"],
+            param_dict["tube_a"], param_dict["tube_b"],
+            param_dict["tube_c"], param_dict["tube_d"],
+            param_dict["s_start"], param_dict["L"],
+            *param_dict["global_params"],
+            self.env.alpha0, self.env.alpha1, x_i, u_i,
+        )
+        cbf_val = float(np.sign(cbf) * min(np.abs(cbf), np.abs(self.env.max_tube_radius - dists[champ_ind])))
+
+        self.cbf_hist.append(cbf_val) 
+        self._update_telemetry()
+
+        self.fig_geo.canvas.draw()
+        plt.pause(0.001)
         if self.save_video: self.writer.grab_frame()
 
     def close(self):
         if self.save_video: self.writer.finish()
-        plt.close(self.fig_geo); plt.close(self.fig_telem)
+        plt.close('all')
