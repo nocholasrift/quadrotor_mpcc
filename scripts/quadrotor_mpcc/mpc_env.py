@@ -81,7 +81,7 @@ class VolaDroneEnv(gym.Env):
 
         traj = np.stack([x, y, z], axis=1)
 
-        self.tube_optimizer = FastTubeOptimizer(tube_degree)
+        self.tube_optimizer = FastTubeOptimizer(tube_degree, max_occ_points=1000)
 
         self.track_kdtree = cKDTree(traj)
         self.max_tube_radius = 1.0
@@ -107,14 +107,14 @@ class VolaDroneEnv(gym.Env):
 
         ocp, self.cbf_func = create_ocp(tube_degree)
         if not solver:
-            # self.solver = AcadosOcpSolver(ocp, build=False, generate=False)
-            self.solver = AcadosOcpSolver(ocp)
+            self.solver = AcadosOcpSolver(ocp, build=False, generate=False)
+            # self.solver = AcadosOcpSolver(ocp)
         else:
             self.solver = solver
 
         if not integrator:
-            # self.integrator = AcadosSimSolver(ocp, build=False, generate=False)
-            self.integrator = AcadosSimSolver(ocp)
+            self.integrator = AcadosSimSolver(ocp, build=False, generate=False)
+            # self.integrator = AcadosSimSolver(ocp)
         else:
             self.integrator = integrator
 
@@ -176,7 +176,7 @@ class VolaDroneEnv(gym.Env):
                 self.solver.set(stage, "u", np.zeros(self.nu))
 
         self.params = np.array(
-            [1.0, 400.0, 1, 5.0, 1.0, 1.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
+            [1.0, 400.0, 1, 5.0, 1.0, 5.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
         )
 
         self.tube_coeffs = get_free_tube(tube_degree, self.max_tube_radius)
