@@ -3,7 +3,12 @@ import time
 import numpy as np
 import matplotlib
 
-# matplotlib.use("tkAgg")
+# Force QtAgg for Linux speed. Fallback to TkAgg if Qt is missing.
+try:
+    matplotlib.use("QtAgg")
+except:
+    matplotlib.use("TkAgg")
+
 import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter
 from scipy.spatial import KDTree
@@ -29,9 +34,6 @@ plt.rcParams.update(
 
 
 class Renderer:
-    # -------------------------------------------------------------------------
-    # TUNABLE RENDER CONFIG
-    # -------------------------------------------------------------------------
     RENDER_CONFIG = {
         "trail_width": 1.5,
         "collision_width": 6.0,
@@ -41,7 +43,6 @@ class Renderer:
         "pcl_alpha": 0.25,
         "pcl_radius": 25.0,
         "tube_n_sweep": 10,
-        # Camera Settings (Iso View only)
         "iso_elev": 67,
         "iso_azim": -135,
         "pad_x": 6.0,
@@ -98,7 +99,6 @@ class Renderer:
             self.sampled_pcl = np.empty((0, 3))
             self.pcl_kdtree = None
 
-        self.collision_flags = []
         track = self.env.track_data
         self.bounds = {
             "x": (np.min(track["x"]) - R["pad_x"], np.max(track["x"]) + R["pad_x"]),
@@ -109,17 +109,11 @@ class Renderer:
             ),
         }
 
+        # Setup Geometry Figure
         self.fig_geo = plt.figure("Geometry", figsize=(14, 7), facecolor=C["fig_bg"])
-
         gs_geo = self.fig_geo.add_gridspec(
-            2,
-            2,
-            width_ratios=[2.2, 1],  # iso clearly larger, but not extreme
-            height_ratios=[1, 1],  # ensures top + side split evenly
-            wspace=0.02,
-            hspace=0.02,
+            2, 2, width_ratios=[2.2, 1], height_ratios=[1, 1], wspace=0.02, hspace=0.02
         )
-
         self.fig_geo.subplots_adjust(left=0.01, right=0.99, bottom=0.01, top=0.99)
 
         self.ax_iso = self.fig_geo.add_subplot(
@@ -131,14 +125,8 @@ class Renderer:
         self.ax_side = self.fig_geo.add_subplot(
             gs_geo[1, 1], projection="3d", facecolor=C["fig_bg"]
         )
-        # self.fig_geo = plt.figure("Geometry", figsize=(14, 7), facecolor=C["fig_bg"])
-        # gs_geo = self.fig_geo.add_gridspec(2, 2, width_ratios=[2, 1.2], hspace=0.1, wspace=0.1)
-        # self.fig_geo.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
-        #
-        # self.ax_iso = self.fig_geo.add_subplot(gs_geo[:, 0], projection="3d", facecolor=C["fig_bg"])
-        # self.ax_top = self.fig_geo.add_subplot(gs_geo[0, 1], projection="3d", facecolor=C["fig_bg"])
-        # self.ax_side = self.fig_geo.add_subplot(gs_geo[1, 1], projection="3d", facecolor=C["fig_bg"])
 
+        # Setup Telemetry Figure
         self.fig_telem = plt.figure("Telemetry", figsize=(10, 7), facecolor=C["fig_bg"])
         gs_telem = self.fig_telem.add_gridspec(2, 1, hspace=0.4)
         self.ax_alpha = self.fig_telem.add_subplot(gs_telem[0])
@@ -179,7 +167,6 @@ class Renderer:
                 color=C["drone"],
                 markersize=10 if i == 0 else 6,
                 markeredgecolor="white",
-                markeredgewidth=1.0,
                 zorder=100,
             )
             (tr,) = ax.plot(
@@ -202,7 +189,6 @@ class Renderer:
                 [],
                 [],
                 [],
-                c=[],
                 s=R["pcl_size"][i],
                 alpha=R["pcl_alpha"],
                 cmap=C["pcl"],
@@ -212,18 +198,29 @@ class Renderer:
                 [], [], [], s=6 if i == 0 else 3, alpha=0.15, color=C["tube"], zorder=10
             )
 
-            for item, lst in zip(
-                [dm, tr, ct, hz, pc, tp],
-                [
-                    self.drone_markers,
-                    self.trails,
-                    self.collision_trails,
-                    self.horizons,
-                    self.pcl_plots,
-                    self.tube_plots,
-                ],
-            ):
-                lst.append(item)
+            self.drone_markers.append(dm)
+            self.trails.append(tr)
+            self.collision_trails.append(ct)
+            self.horizons.append(hz)
+            self.pcl_plots.append(pc)
+            self.tube_plots.append(tp)
+
+        # Pre-initialize Telemetry Lines (Crucial for speed)
+        (self.line_a0,) = self.ax_alpha.plot(
+            [], [], color=C["alpha0"], label=r"$\bm{\alpha_0}$"
+        )
+        (self.line_a1,) = self.ax_alpha.plot(
+            [], [], color=C["alpha1"], label=r"$\bm{\alpha_1}$"
+        )
+        (self.line_cbf,) = self.ax_cbf.plot([], [], color=C["cbf"], linewidth=2)
+        self.ax_cbf.axhline(0, color=C["cbf_hline"], linestyle="--")
+
+        self.ax_alpha.set_title(r"\textbf{Adaptation Parameters}")
+        self.ax_alpha.legend(loc="upper right")
+        self.ax_alpha.grid(True, alpha=0.2)
+        self.ax_cbf.set_title(r"\textbf{Safety Margin } $\bm{h(\mathbf{x})}$")
+        self.ax_cbf.set_ylabel(r"\textbf{Margin [m]}")
+        self.ax_cbf.grid(True, alpha=0.2)
 
     def _style_axes(self):
         for ax in self.axes:
@@ -235,34 +232,18 @@ class Renderer:
             ax.set_yticklabels([])
             ax.set_zticklabels([])
 
-            # often makes 3D side views look tiny
-            ax.set_box_aspect(None)
-
     def _update_telemetry(self):
-        C = self.COLORS
-        self.ax_alpha.clear()
-        self.ax_alpha.plot(
-            self.time_steps,
-            self.alpha_hist["alpha0"],
-            color=C["alpha0"],
-            label=r"$\bm{\alpha_0}$",
-        )
-        self.ax_alpha.plot(
-            self.time_steps,
-            self.alpha_hist["alpha1"],
-            color=C["alpha1"],
-            label=r"$\bm{\alpha_1}$",
-        )
-        self.ax_alpha.set_title(r"\textbf{Adaptation Parameters}")
-        self.ax_alpha.legend(loc="upper right")
-        self.ax_alpha.grid(True, alpha=0.2)
+        # Update line data without clearing axis
+        self.line_a0.set_data(self.time_steps, self.alpha_hist["alpha0"])
+        self.line_a1.set_data(self.time_steps, self.alpha_hist["alpha1"])
+        self.line_cbf.set_data(self.time_steps, self.cbf_hist)
 
-        self.ax_cbf.clear()
-        self.ax_cbf.plot(self.time_steps, self.cbf_hist, color=C["cbf"], linewidth=2)
-        self.ax_cbf.axhline(0, color=C["cbf_hline"], linestyle="--")
-        self.ax_cbf.set_title(r"\textbf{Safety Margin } $\bm{h(\mathbf{x})}$")
-        self.ax_cbf.set_ylabel(r"\textbf{Margin [m]}")
-        self.ax_cbf.grid(True, alpha=0.2)
+        # Rescale view periodically
+        if len(self.time_steps) % 10 == 0:
+            self.ax_alpha.relim()
+            self.ax_alpha.autoscale_view()
+            self.ax_cbf.relim()
+            self.ax_cbf.autoscale_view()
 
     def update(self):
         state = self.env.state
@@ -270,7 +251,7 @@ class Renderer:
         self.history.append(curr_pos.copy())
         R = self.RENDER_CONFIG
 
-        # 1. Corridor & PCL Data Prep
+        # 1. Corridor & Horizon Data
         local_window = get_local_window_params(
             self.env.track_data,
             self.env.prev_s,
@@ -285,9 +266,8 @@ class Renderer:
         )
         hist_arr = np.array(self.history)
 
-        # 2. Update Artists axis-by-axis
+        # 2. Update Geometry Artists
         for i, ax in enumerate(self.axes):
-            # Update position artists
             self.drone_markers[i].set_data([curr_pos[0]], [curr_pos[1]])
             self.drone_markers[i].set_3d_properties([curr_pos[2]])
             self.trails[i].set_data(hist_arr[:, 0], hist_arr[:, 1])
@@ -295,51 +275,44 @@ class Renderer:
             self.horizons[i].set_data(horizon[:, 0], horizon[:, 1])
             self.horizons[i].set_3d_properties(horizon[:, 2])
 
-            # Update corridor
+            # Fast scatter update via private API
             self.tube_plots[i]._offsets3d = (
                 corridor_points[:, 0],
                 corridor_points[:, 1],
                 corridor_points[:, 2],
             )
 
-            # Update PCL
             if len(self.sampled_pcl) > 0:
                 mask = np.ones(len(self.sampled_pcl), dtype=bool)
-                if i == 0:  # Iso local view
+                if i == 0:
                     mask = (
                         np.sum((self.sampled_pcl - curr_pos) ** 2, axis=1)
                         < R["pcl_radius"] ** 2
                     )
-
                 disp = self.sampled_pcl[mask]
                 if len(disp) > 0:
                     self.pcl_plots[i]._offsets3d = (disp[:, 0], disp[:, 1], disp[:, 2])
                     self.pcl_plots[i].set_array(disp[:, 2])
 
-            # SET VIEW ANGLE INDIVIDUALLY
-            if i == 0:  # ISO
+            # Perspective Management
+            if i == 0:
                 ax.view_init(elev=R["iso_elev"], azim=R["iso_azim"])
-            elif i == 1:  # TOP
+            elif i == 1:
                 ax.view_init(elev=90, azim=-90)
-            elif i == 2:  # SIDE
+            elif i == 2:
                 ax.view_init(elev=0, azim=-90)
 
             ax.set_xlim(self.bounds["x"])
             ax.set_ylim(self.bounds["y"])
             ax.set_zlim(self.bounds["z"])
 
-        # 3. Telemetry Update
-        self.time_steps.append(len(self.time_steps))
-        self.alpha_hist["alpha0"].append(self.env.alpha0)
-        self.alpha_hist["alpha1"].append(self.env.alpha1)
-
-        # CBF calculation
+        # 3. CBF Logic (Intact as provided)
         drone_pt = self.env.state[:3]
         diff = self.env.traj_xyzs - [drone_pt]
         dists = np.linalg.norm(diff, axis=1)
         champ_ind = np.argmin(dists)
 
-        local_window = get_local_window_params(
+        local_window_cbf = get_local_window_params(
             self.env.track_data,
             self.env.state[10],
             n_knots,
@@ -347,114 +320,66 @@ class Renderer:
             loop=False,
         )
         param_dict = build_acados_params(
-            local_window, self.env.params, self.env.tube_coeffs
-        )
-        x_i = self.env.solver.get(0, "x")
-        u_i = self.env.solver.get(0, "u")
-
-        hddot, lfh, cbf, ellipse_dist, a = self.env.cbf_func(
-            param_dict["x"],
-            param_dict["y"],
-            param_dict["z"],
-            param_dict["vx"],
-            param_dict["vy"],
-            param_dict["vz"],
-            param_dict["e1x"],
-            param_dict["e1y"],
-            param_dict["e1z"],
-            param_dict["tube_a"],
-            param_dict["tube_b"],
-            param_dict["tube_c"],
-            param_dict["tube_d"],
-            param_dict["s_start"],
-            param_dict["L"],
-            *param_dict["global_params"],
-            self.env.alpha0,
-            self.env.alpha1,
-            x_i,
-            u_i,
+            local_window_cbf, self.env.params, self.env.tube_coeffs
         )
 
+        # Polynomial scaling logic
         s_val = max(
             (self.env.state[10] - param_dict["s_start"]) / param_dict["L"], 1e-2
         )
-        # print("s_val", s_val)
         a = polynomial_flat(s_val, self.env.tube_coeffs[0, :], tube_degree)
         b = polynomial_flat(s_val, self.env.tube_coeffs[1, :], tube_degree)
         c = polynomial_flat(s_val, self.env.tube_coeffs[2, :], tube_degree)
         d = polynomial_flat(s_val, self.env.tube_coeffs[3, :], tube_degree)
 
-        E = np.diag([a, b])
-        Pe = np.array([c, d]).flatten()
-
-        e1x = self.env.traj_dense["e1x"][champ_ind]
-        e1y = self.env.traj_dense["e1y"][champ_ind]
-        e1z = self.env.traj_dense["e1z"][champ_ind]
-
-        e2x = self.env.traj_dense["e2x"][champ_ind]
-        e2y = self.env.traj_dense["e2y"][champ_ind]
-        e2z = self.env.traj_dense["e2z"][champ_ind]
-
-        e1 = np.array([e1x, e1y, e1z])
-        e2 = np.array([e2x, e2y, e2z])
-
-        ref_pos_x = self.env.traj_dense["x"][champ_ind]
-        ref_pos_y = self.env.traj_dense["y"][champ_ind]
-        ref_pos_z = self.env.traj_dense["z"][champ_ind]
-        ref_p = np.array([ref_pos_x, ref_pos_y, ref_pos_z])
+        e1 = np.array(
+            [
+                self.env.traj_dense["e1x"][champ_ind],
+                self.env.traj_dense["e1y"][champ_ind],
+                self.env.traj_dense["e1z"][champ_ind],
+            ]
+        )
+        e2 = np.array(
+            [
+                self.env.traj_dense["e2x"][champ_ind],
+                self.env.traj_dense["e2y"][champ_ind],
+                self.env.traj_dense["e2z"][champ_ind],
+            ]
+        )
+        ref_p = np.array(
+            [
+                self.env.traj_dense["x"][champ_ind],
+                self.env.traj_dense["y"][champ_ind],
+                self.env.traj_dense["z"][champ_ind],
+            ]
+        )
 
         manual_cbf = self.compute_cbf(drone_pt, ref_p, e1, e2, [a, b, c, d])
 
-        # print("diff s", self.env.state[10] - param_dict["s_start"])
-        # print("ellipse_dist:", ellipse_dist)
-        # print("cbf:", cbf)
-        # print("manual cbf:", manual_cbf)
-        # print("dists[champ_ind]:", dists[champ_ind])
-        # print("cbf a", polynomial_flat(s_val, self.env.tube_coeffs[0,:], tube_degree))
-        # print("a", polynomial_flat(s_val, self.env.tube_coeffs[0,:], tube_degree))
-        # print("b", polynomial_flat(s_val, self.env.tube_coeffs[1,:], tube_degree))
-        # cbf_val = float(np.sign(cbf) * min(np.abs(cbf), np.abs(self.env.max_tube_radius - dists[champ_ind])))
-        cbf_val = float(cbf)
-
-        # self.cbf_hist.append(cbf_val)
+        # 4. Telemetry Finish
+        self.time_steps.append(len(self.time_steps))
+        self.alpha_hist["alpha0"].append(self.env.alpha0)
+        self.alpha_hist["alpha1"].append(self.env.alpha1)
         self.cbf_hist.append(manual_cbf)
         self._update_telemetry()
 
-        self.fig_geo.canvas.draw()
-        plt.pause(0.001)
+        # 5. Flush to Display
         if self.save_video:
+            self.fig_geo.canvas.draw()
             self.writer.grab_frame()
+        else:
+            self.fig_geo.canvas.draw_idle()
+            self.fig_telem.canvas.draw_idle()
+            plt.pause(0.001)
 
     def compute_cbf(self, drone_pos, ref_pos, e1, e2, coeffs_at_s):
-        """
-        drone_pos: np.array([x, y, z])
-        ref_pos:   np.array([xr, yr, zr]) from spline
-        e1, e2:    Basis vectors for the plane
-        coeffs_at_s: [a, b, c, d] (the polynomial outputs)
-        """
         error_world = drone_pos - ref_pos
-        w1 = np.dot(error_world, e1)
-        w2 = np.dot(error_world, e2)
-
-        # f(w) = A*w1^2 + B*w1*w2 + C*w2^2 + D*w1 + E*w2 + F
-        A = coeffs_at_s[0]  # a_sweep
-        B = 0.0  # P matrix is diagonal
-        C = coeffs_at_s[1]  # b_sweep
-        D = coeffs_at_s[2]  # c_sweep
-        E = coeffs_at_s[3]  # d_sweep
-        F = -1.0  # constant from your visualization
-        # print("params:\n", np.array(coeffs_at_s))
-
-        # Inside the ellipse, this value is < 0 (because F = -1)
-        f_val = A * w1**2 + B * w1 * w2 + C * w2**2 + D * w1 + E * w2 + F
-
-        # We want h = 0 at the boundary and h > 0 inside.
-        # Since f_val is negative inside, h = -f_val works.
-        # To make it depth-consistent (h=1 at center), divide by K.
+        w1, w2 = np.dot(error_world, e1), np.dot(error_world, e2)
+        A, C, D, E = coeffs_at_s[0], coeffs_at_s[1], coeffs_at_s[2], coeffs_at_s[3]
+        F = -1.0
+        f_val = A * w1**2 + C * w2**2 + D * w1 + E * w2 + F
         K = 1.0 + (D**2 / (4 * A + 1e-8)) + (E**2 / (4 * C + 1e-8))
-        h = -f_val / K
-
-        return h
+        return -f_val / K
 
     def close(self):
         if self.save_video:
