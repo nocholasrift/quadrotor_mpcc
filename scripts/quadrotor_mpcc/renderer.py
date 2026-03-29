@@ -253,7 +253,7 @@ class Renderer:
         x_i = self.env.solver.get(0, "x")
         u_i = self.env.solver.get(0, "u")
 
-        hddot, lfh, cbf, LgLfh = self.env.cbf_func(
+        hddot, lfh, cbf, ellipse_dist, a = self.env.cbf_func(
             param_dict["x"], param_dict["y"], param_dict["z"],
             param_dict["vx"], param_dict["vy"], param_dict["vz"],
             param_dict["e1x"], param_dict["e1y"], param_dict["e1z"],
@@ -263,14 +263,85 @@ class Renderer:
             *param_dict["global_params"],
             self.env.alpha0, self.env.alpha1, x_i, u_i,
         )
+
+        
+        s_val = max((self.env.state[10] - param_dict["s_start"]) / param_dict["L"], 1e-2)
+        # print("s_val", s_val)
+        a = polynomial_flat(s_val, self.env.tube_coeffs[0, :], tube_degree)
+        b = polynomial_flat(s_val, self.env.tube_coeffs[1, :], tube_degree)
+        c = polynomial_flat(s_val, self.env.tube_coeffs[2, :], tube_degree)
+        d = polynomial_flat(s_val, self.env.tube_coeffs[3, :], tube_degree)
+
+        E = np.diag([a, b])
+        Pe = np.array([c, d]).flatten()
+
+        e1x = self.env.traj_dense["e1x"][champ_ind]
+        e1y = self.env.traj_dense["e1y"][champ_ind]
+        e1z = self.env.traj_dense["e1z"][champ_ind]
+
+        e2x = self.env.traj_dense["e2x"][champ_ind]
+        e2y = self.env.traj_dense["e2y"][champ_ind]
+        e2z = self.env.traj_dense["e2z"][champ_ind]
+
+        e1 = np.array([e1x, e1y, e1z])
+        e2 = np.array([e2x, e2y, e2z])
+
+        ref_pos_x = self.env.traj_dense["x"][champ_ind]
+        ref_pos_y = self.env.traj_dense["y"][champ_ind]
+        ref_pos_z = self.env.traj_dense["z"][champ_ind]
+        ref_p = np.array([ref_pos_x, ref_pos_y, ref_pos_z])
+
+        manual_cbf = self.compute_cbf(drone_pt, ref_p, e1, e2, [a, b, c, d])
+
+
+        # print("diff s", self.env.state[10] - param_dict["s_start"])
+        # print("ellipse_dist:", ellipse_dist)
+        # print("cbf:", cbf)
+        # print("manual cbf:", manual_cbf)
+        # print("dists[champ_ind]:", dists[champ_ind])
+        # print("cbf a", polynomial_flat(s_val, self.env.tube_coeffs[0,:], tube_degree))
+        # print("a", polynomial_flat(s_val, self.env.tube_coeffs[0,:], tube_degree))
+        # print("b", polynomial_flat(s_val, self.env.tube_coeffs[1,:], tube_degree))
         cbf_val = float(np.sign(cbf) * min(np.abs(cbf), np.abs(self.env.max_tube_radius - dists[champ_ind])))
 
-        self.cbf_hist.append(cbf_val) 
+        # self.cbf_hist.append(cbf_val) 
+        self.cbf_hist.append(manual_cbf)
         self._update_telemetry()
 
         self.fig_geo.canvas.draw()
         plt.pause(0.001)
         if self.save_video: self.writer.grab_frame()
+
+    def compute_cbf(self, drone_pos, ref_pos, e1, e2, coeffs_at_s):
+        """
+        drone_pos: np.array([x, y, z])
+        ref_pos:   np.array([xr, yr, zr]) from spline
+        e1, e2:    Basis vectors for the plane
+        coeffs_at_s: [a, b, c, d] (the polynomial outputs)
+        """
+        error_world = drone_pos - ref_pos
+        w1 = np.dot(error_world, e1)
+        w2 = np.dot(error_world, e2)
+
+        # f(w) = A*w1^2 + B*w1*w2 + C*w2^2 + D*w1 + E*w2 + F
+        A = coeffs_at_s[0] # a_sweep
+        B = 0.0            # P matrix is diagonal
+        C = coeffs_at_s[1] # b_sweep
+        D = coeffs_at_s[2] # c_sweep
+        E = coeffs_at_s[3] # d_sweep
+        F = -1.0           # constant from your visualization
+        # print("params:\n", np.array(coeffs_at_s))
+
+        # Inside the ellipse, this value is < 0 (because F = -1)
+        f_val = A*w1**2 + B*w1*w2 + C*w2**2 + D*w1 + E*w2 + F
+        
+        # We want h = 0 at the boundary and h > 0 inside.
+        # Since f_val is negative inside, h = -f_val works.
+        # To make it depth-consistent (h=1 at center), divide by K.
+        K = 1.0 + (D**2 / (4 * A + 1e-8)) + (E**2 / (4 * C + 1e-8))
+        h = -f_val / K
+
+        return h
 
     def close(self):
         if self.save_video: self.writer.finish()

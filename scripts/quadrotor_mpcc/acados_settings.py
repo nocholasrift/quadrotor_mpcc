@@ -94,8 +94,10 @@ def create_ocp(tube_degree):
     #
 
     # input constraints
-    ocp.constraints.lbu = np.array([0.01, -7.0, -7.0, -4.5, 0])
-    ocp.constraints.ubu = np.array([0.40, 7.0, 7.0, 4.5, 3.0])
+    # ocp.constraints.lbu = np.array([0.01, -7.0, -7.0, -4.5, 0])
+    # ocp.constraints.ubu = np.array([0.40, 7.0, 7.0, 4.5, 3.0])
+    ocp.constraints.lbu = np.array([0.01, -10.0, -10.0, -4.5, 0])
+    ocp.constraints.ubu = np.array([1.0, 10.0, 10.0, 4.5, 3.0])
     ocp.constraints.idxbu = np.array([0, 1, 2, 3, 4])
 
     # state constraints

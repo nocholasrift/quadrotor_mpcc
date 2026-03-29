@@ -7,13 +7,13 @@ obstacles:
   # CORNER 1: Top-Right (Inside the bend)
   # Trajectory is near [4.8, 4.8], Pillar is at [4.0, 4.0]
   - <<: *corner_pillar
-    position: [3.9, 3.9, 0.0]
+    position: [4.0, 4.0, 0.0]
     rotation: [0, 0, 0]
 
   # CORNER 2: Top-Left (Inside the bend)
   # Trajectory is near [-4.8, 4.8], Pillar is at [-4.0, 4.0]
   - <<: *corner_pillar
-    position: [-3.9, 3.8, 0.0]
+    position: [-4.0, 4.0, 0.0]
     rotation: [0, 0, 0]
 
   # CORNER 3: Bottom-Left (Inside the bend)

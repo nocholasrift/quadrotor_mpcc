@@ -50,8 +50,10 @@ class VolaDroneEnv(gym.Env):
         self.should_normalize_obs = normalize_obs
         self.use_warm_start = use_warm_start
 
-        self.alpha0_init = 5
-        self.alpha1_init = 1
+        self.prev_solve_status = False
+
+        self.alpha0_init = 5.0
+        self.alpha1_init = 0.1
 
         # Log-space gain setup for delta-action learning
         self.alpha_min = np.array([min_alpha, min_alpha], dtype=np.float32)
@@ -74,7 +76,7 @@ class VolaDroneEnv(gym.Env):
         y = self.track_data["y"]
         z = self.track_data["z"]
 
-        self.traj_dense = setup_track(self.track, samples=100)
+        self.traj_dense = setup_track(self.track, samples=1000)
         self.traj_xyzs = np.column_stack(
             [self.traj_dense["x"], self.traj_dense["y"], self.traj_dense["z"]]
         )
@@ -164,6 +166,7 @@ class VolaDroneEnv(gym.Env):
         self.n_consecutive_infeasibilities = 0
         self.prev_s = 0
         self.step_count = 0
+        self.prev_solve_status = False
 
         self.log_alphas = np.log(
             np.array([self.alpha0_init, self.alpha1_init], dtype=np.float32)
@@ -176,7 +179,7 @@ class VolaDroneEnv(gym.Env):
                 self.solver.set(stage, "u", np.zeros(self.nu))
 
         self.params = np.array(
-            [1.0, 400.0, 1, 5.0, 1.0, 5.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
+            [1.0, 20.0, 1.2, 1.0, 1.0, 25.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
         )
 
         self.tube_coeffs = get_free_tube(tube_degree, self.max_tube_radius)
@@ -191,11 +194,12 @@ class VolaDroneEnv(gym.Env):
         prev_x = [self.solver.get(i, "x") for i in range(self.N + 1)]
         prev_u = [self.solver.get(i, "u") for i in range(self.N)]
 
-        ds = prev_x[1][10]
+        ds = self.state[10] - prev_x[1][10]
 
         for i in range(self.N - 1):
             # Move stage i+1 to stage i
             new_x = prev_x[i + 1].copy()
+            new_x += ds
             new_u = prev_u[i + 1]
 
             self.solver.set(i, "x", new_x)
@@ -257,9 +261,14 @@ class VolaDroneEnv(gym.Env):
         dists = np.linalg.norm(diff, axis=1)
         closest_ind = np.argmin(dists)
 
-        # self.state[10] = self.traj_dense["s"][closest_ind]
+        delta_s = np.abs(self.traj_dense["s"][closest_ind] - self.state[10])
+        self.state[10] = self.traj_dense["s"][closest_ind]
+        if self.prev_s < self.traj_dense["s"][-1] / 2 and self.state[10] > 0.9 * self.traj_dense["s"][-1]:
+            self.state[10] = 1e-1
+
         s_global_now = self.state[10]
         self.prev_s = s_global_now - 0.1
+
         local_window = get_local_window_params(
             self.track_data,
             s_global_now,
@@ -267,6 +276,8 @@ class VolaDroneEnv(gym.Env):
             window_dist=self.track_horizon_window,
             loop=self.loop,
         )
+        if local_window["L"] < 1e-1:
+            print(local_window)
 
         delta_log_action = np.zeros(2, dtype=np.float32)
         if isinstance(action, np.ndarray):
@@ -312,27 +323,6 @@ class VolaDroneEnv(gym.Env):
             self.tube_coeffs[1, :] = b_val
             self.tube_coeffs[2, :] = c_val
             self.tube_coeffs[3, :] = d_val
-        # if len(occ_data) > 0:
-        #     occ_data[:, 0] -= s_global_now
-        #     mask = (occ_data[:, 0] >= 0) & (occ_data[:, 0] <= local_window["L"])
-        #     occ_data = occ_data[mask]
-        #
-        #     # if occ_data.shape[0] > 0:
-        #     setup_start = time.time()
-        #     solver, coeffs = NLP(
-        #         tube_degree,
-        #         occ_data,
-        #         local_window["L"],
-        #         self.max_tube_radius,
-        #         True,
-        #     )
-        #     print("setup time", time.time() - setup_start)
-        #     solver.solve(solver=cp.CLARABEL, verbose=False, time_limit=1.0)
-        #     a, b, c, d = coeffs
-        #     self.tube_coeffs[0, :] = a.value
-        #     self.tube_coeffs[1, :] = b.value
-        #     self.tube_coeffs[2, :] = c.value
-        #     self.tube_coeffs[3, :] = d.value
 
         # print("tube time", time.time() - start_tube)
         # print("time elapsed so far", time.time() - start)
@@ -351,6 +341,14 @@ class VolaDroneEnv(gym.Env):
         local_state[10] = max(param_dict["s_start"][0] + 1e-3, local_state[10])
 
         if self.step_count != 0 and self.use_warm_start:
+            # if delta_s > 0.1 or not self.prev_solve_status:
+            #     # basic warm start with x_i = x[0], u_i = 0
+            #     # for stage in range(self.N+1):
+            #     #     self.solver.set(stage, "x", local_state)
+            #     #     if stage < self.N:
+            #     #         self.solver.set(stage, "u", np.zeros(self.nu))
+            #     pass
+            # else:
             self._warm_start(param_dict)
 
         # Set parameters and pin initial state
@@ -367,25 +365,24 @@ class VolaDroneEnv(gym.Env):
 
         # Evolve physics
         start_solve = time.time()
-        status = self.solver.solve()
+        self.prev_solve_status = (self.solver.solve() == 0)
+        
         # print("solve time", time.time() - start_solve)
         # print("elapsed so far", time.time() - start)
 
-        next_local_state = self.solver.get(1, "x")
+        # next_local_state = self.solver.get(1, "x")
+        self.integrator.set("x", self.state)
+        self.integrator.set("u", self.solver.get(0, "u"))
+        self.integrator.set("p", local_p)
+        self.integrator.solve()
+        next_local_state = self.integrator.get("x")
 
         q_norm = np.linalg.norm(next_local_state[6:10])
         next_local_state[6:10] /= q_norm
 
-        global_s_next = s_global_now + next_local_state[10]
-        # global_s_next = global_s_next % self.track_data["s"][-1]
         self.state = next_local_state.copy()
-        # self.state[10] = global_s_next
-        # print("xN s:", self.solver.get(self.N, "x")[10])
-        xN = self.solver.get(self.N, "x")
-        # print("s_dot", xN[-1])
-        # print("delta s", xN[10] - local_state[10])
+        # print("speed",np.linalg.norm(self.state[3:6]))
 
-        u = self.solver.get(0, "u")
         gym_obs = self._get_obs(param_dict, self.state[11] / max_s_dot)
         # gym_obs = []
 
@@ -409,13 +406,13 @@ class VolaDroneEnv(gym.Env):
             or self.step_count >= self.max_step
         )
 
-        reward = self._get_reward(gym_obs, self.state[-2], terminated, status, delta_log_action)
+        reward = self._get_reward(gym_obs, self.state[-2], terminated, self.prev_solve_status, delta_log_action)
 
         # print("un-norm", gym_obs)
         if self.should_normalize_obs:
             gym_obs = self.normalize_obs(gym_obs, self.obs_mean, self.obs_std)
 
-        print("time", time.time() - start)
+        # print("time", time.time() - start)
 
         # print("norm", gym_obs)
         return gym_obs, reward, terminated, truncated, {}
@@ -434,7 +431,7 @@ class VolaDroneEnv(gym.Env):
             x_i = self.solver.get(int(i), "x")
             u_i = self.solver.get(int(i), "u")
 
-            hddot, lfh, cbf, LgLfh = self.cbf_func(
+            hddot, lfh, cbf, _, _ = self.cbf_func(
                 local_p["x"],
                 local_p["y"],
                 local_p["z"],
@@ -582,8 +579,8 @@ def main():
 
     # looped tracks
     # track = "figure8"
-    # track = "3d_square"
-    track = "3d_square_loop"
+    track = "3d_square"
+    # track = "3d_square_loop"
     # loop = True
 
     env = VolaDroneEnv(track, render_mode="human", normalize_obs=False, loop=loop)

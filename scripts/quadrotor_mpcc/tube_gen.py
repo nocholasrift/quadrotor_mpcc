@@ -17,6 +17,14 @@ def poly_basis(xi, k, basis, d):
         return np.math.comb(d, k) * xi**k * (1 - xi) ** (d - k)
 
 
+def polynomial_flat(xi, coeffs, degree):
+    p_basis = "c"
+    ret = 0
+    for k in range(degree + 1):
+        ret += coeffs[k] * poly_basis(xi=xi, k=k, basis=p_basis, d=degree)
+
+    return ret
+
 def polynomial(xi, coeffs, degree):
     p_basis = "c"
     a = 0

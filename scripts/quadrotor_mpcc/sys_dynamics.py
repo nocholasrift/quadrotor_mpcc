@@ -204,21 +204,38 @@ class SysDyn:
 
         radius = 1.0
         # cbf = radius**2 - ca.dot(e_perp, e_perp) - 0.05 * alignment
-        err_e1 = ca.dot(e_tot, e1)
-        err_e2 = ca.dot(e_tot, e2)
+        # err_e1 = ca.dot(e_tot, e1)
+        # err_e2 = ca.dot(e_tot, e2)
         # err_rmf = ca.vertcat(err_e1, err_e2)
 
-        E = ca.vertcat(ca.horzcat(e_axis_a, 0), ca.horzcat(0, e_axis_b))
+        # E = ca.vertcat(ca.horzcat(e_axis_a, 0), ca.horzcat(0, e_axis_b))
 
         # ellipse_center = ca.vertcat(e_offset_a, e_offset_b)
 
         # cbf = 1 - (ellipse_center - err_rmf).T @ E @ (ellipse_center - err_rmf)
-        cx = -e_offset_a / (2 * e_axis_a)
-        cy = -e_offset_b / (2 * e_axis_b)
-        w1_shifted = err_e1 - cx
-        w2_shifted = err_e2 - cy
+        # w1 = ca.dot(e_tot, e1)
+        # w2 = ca.dot(e_tot, e2)
+        #
+        # p1 = -e_offset_a / (2 * e_axis_a + 1e-8)
+        # p2 = -e_offset_b / (2 * e_axis_b + 1e-8)
+        #
+        # K = 1.0 + (e_offset_a**2 / (4 * e_axis_a + 1e-8)) + (e_offset_b**2 / (4 * e_axis_b + 1e-8))
+        #
+        # f = (e_axis_a * w1**2 + e_axis_b * w2**2 + e_offset_a * w1 + e_offset_b * w2)
+        #
+         # 1. Project global error onto the local RMF frame
+        w1 = ca.dot(e_tot, e1)
+        w2 = ca.dot(e_tot, e2)
 
-        cbf = 1 - (e_axis_a * w1_shifted**2 + e_axis_b * w2_shifted**2)
+        A = e_axis_a
+        C = e_axis_b
+        D = e_offset_a
+        E = e_offset_b
+        F_const = -1.0 
+
+        f_val = A*w1**2 + C*w2**2 + D*w1 + E*w2 + F_const
+        K = 1.0 + (D**2 / (4 * A + 1e-8)) + (E**2 / (4 * C + 1e-8))
+        cbf = -f_val / K
 
         grad_h = ca.jacobian(cbf, x)
         Lfh = grad_h @ F
@@ -301,7 +318,7 @@ class SysDyn:
                 x,
                 u,
             ],
-            [hddot, Lfh, cbf, LgLfh],
+            [hddot, Lfh, cbf, radius, e_axis_a],
             [
                 "x_c",
                 "y_c",
@@ -329,7 +346,7 @@ class SysDyn:
                 "x_val",
                 "u",
             ],
-            ["hddot", "Lfh", "cbf", "lglfh"],
+            ["hddot", "Lfh", "cbf", "ellipse_dist", "a"],
         )
 
         model = AcadosModel()
