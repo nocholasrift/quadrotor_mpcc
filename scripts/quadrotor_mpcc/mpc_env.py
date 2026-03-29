@@ -53,7 +53,7 @@ class VolaDroneEnv(gym.Env):
         self.prev_solve_status = False
 
         self.alpha0_init = 5.0
-        self.alpha1_init = 0.1
+        self.alpha1_init = 5.0
 
         # Log-space gain setup for delta-action learning
         self.alpha_min = np.array([min_alpha, min_alpha], dtype=np.float32)
@@ -83,7 +83,7 @@ class VolaDroneEnv(gym.Env):
 
         traj = np.stack([x, y, z], axis=1)
 
-        self.tube_optimizer = FastTubeOptimizer(tube_degree, max_occ_points=1000)
+        self.tube_optimizer = FastTubeOptimizer(tube_degree, max_occ_points=3000)
 
         self.track_kdtree = cKDTree(traj)
         self.max_tube_radius = 1.0
@@ -179,8 +179,11 @@ class VolaDroneEnv(gym.Env):
                 self.solver.set(stage, "u", np.zeros(self.nu))
 
         self.params = np.array(
-            [1.0, 20.0, 1.2, 1.0, 1.0, 25.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
+            [0.0, 100.0, 1.2, 1.0, 1.0, 20.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
         )
+        # self.params = np.array(
+        #     [5.0, 100.0, 1.2, 1.0, 1.0, 1.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
+        # )
 
         self.tube_coeffs = get_free_tube(tube_degree, self.max_tube_radius)
 
@@ -263,8 +266,11 @@ class VolaDroneEnv(gym.Env):
 
         delta_s = np.abs(self.traj_dense["s"][closest_ind] - self.state[10])
         self.state[10] = self.traj_dense["s"][closest_ind]
-        if self.prev_s < self.traj_dense["s"][-1] / 2 and self.state[10] > 0.9 * self.traj_dense["s"][-1]:
-            self.state[10] = 1e-1
+        if np.abs(self.prev_s - self.state[10]) > 2 * self.state[11]:
+            self.state[10] = self.prev_s + self.state[11] * Tf / N
+
+        # if self.prev_s < 3 * self.traj_dense["s"][-1] / 2 and self.state[10] > 0.9 * self.traj_dense["s"][-1]:
+        #     self.state[10] = self.prev_s + self.state[11] * Tf / N
 
         s_global_now = self.state[10]
         self.prev_s = s_global_now - 0.1
@@ -302,6 +308,7 @@ class VolaDroneEnv(gym.Env):
                 max_radius=self.max_tube_radius,
             )
             # print("project time", time.time() - project_start)
+        # occ_data = []
         start_tube = time.time()
         if len(occ_data) > 0:
             occ_data[:, 0] -= s_global_now
@@ -579,7 +586,8 @@ def main():
 
     # looped tracks
     # track = "figure8"
-    track = "3d_square"
+    track = "3d_loop"
+    # track = "3d_square"
     # track = "3d_square_loop"
     # loop = True
 
@@ -589,8 +597,10 @@ def main():
     for i in range(0, 2000):
         start = time.time()
         _, _, done, _, _ = env.step()
-        # print("step took ", time.time() - start)
-        env.render()
+        start = time.time()
+
+        if i % 3 == 0:
+            env.render()
 
         # input()
         if done:

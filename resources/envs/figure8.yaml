@@ -48,7 +48,7 @@ obstacles:
 
   # Left pillar
   - <<: *corridor_pillar
-    position: [7.07, 7.00, 0.00]
+    position: [7.07, 5.00, 0.00]
     rotation: [0, 0, 0]
 
   # Right pillar
@@ -66,12 +66,12 @@ obstacles:
 
   # Left pillar
   - <<: *corridor_pillar
-    position: [7.07, -7.00, 0.00]
+    position: [6.7, -5.00, 0.00]
     rotation: [0, 0, 0]
 
   # Right pillar
   - <<: *corridor_pillar
-    position: [7.07, -3.00, 0.00]
+    position: [6.7, -3.00, 0.00]
     rotation: [0, 0, 0]
 
   # Crossbar overhead

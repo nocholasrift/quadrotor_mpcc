@@ -27,7 +27,7 @@ class Renderer:
     # TUNABLE RENDER CONFIG
     # -------------------------------------------------------------------------
     RENDER_CONFIG = {
-        "trail_width": 3.5,
+        "trail_width": 1.5,
         "collision_width": 6.0,
         "track_width": 4.0,
         "horizon_width": 2.5,
@@ -35,7 +35,7 @@ class Renderer:
         "pcl_size": [4.0, 1.0, 1.0],
         "pcl_alpha": 0.25,
         "pcl_radius": 25.0,
-        "tube_n_sweep": 25,          
+        "tube_n_sweep": 10,          
         
         # Camera Settings (Iso View only)
         "iso_elev": 67,             
@@ -302,7 +302,8 @@ class Renderer:
         # print("cbf a", polynomial_flat(s_val, self.env.tube_coeffs[0,:], tube_degree))
         # print("a", polynomial_flat(s_val, self.env.tube_coeffs[0,:], tube_degree))
         # print("b", polynomial_flat(s_val, self.env.tube_coeffs[1,:], tube_degree))
-        cbf_val = float(np.sign(cbf) * min(np.abs(cbf), np.abs(self.env.max_tube_radius - dists[champ_ind])))
+        # cbf_val = float(np.sign(cbf) * min(np.abs(cbf), np.abs(self.env.max_tube_radius - dists[champ_ind])))
+        cbf_val = float(cbf)
 
         # self.cbf_hist.append(cbf_val) 
         self.cbf_hist.append(manual_cbf)

@@ -516,7 +516,7 @@ def draw_horizon(ax, track_data, state):
     return p, t, e1, e2
 
 
-def get_corridor_pts(ax, track_data, coeffs, alpha=0.2, n_sweep=100, stride=1, n_angles=50):
+def get_corridor_pts(ax, track_data, coeffs, alpha=0.2, n_sweep=100, stride=1, n_angles=20):
     xi_eval = np.linspace(0, 1, n_sweep)
 
     poly_deg   = len(coeffs[0]) - 1
@@ -616,7 +616,7 @@ N = 40
 
 
 min_alpha = 0.1
-max_alpha = 5.0
+max_alpha = 10.0
 
 min_alpha_dot = -3.0
 max_alpha_dot = 3.0

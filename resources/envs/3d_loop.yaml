@@ -1,60 +1,33 @@
 templates:
+  - &square
+    type: "box"
+    size: [8.0, 8.0, 15.0] 
+
   - &pillar
     type: "box"
-    size: [0.4, 0.4, 6.0] 
+    size: [1.0, 1.0, 15.0] 
 
-  - &gate_frame
-    type: "box"
-    size: [0.2, 3.0, 0.2] # Horizontal bar to force low flight
-
-  - &asteroid
-    type: "sphere"
-    radius: 1.2
 
 obstacles:
   # 1. THE INNER PINCH (Near Gate 1: [6, 0, 1.2])
   # Placed at R=4.5 to force the drone to stay on the outside of the turn.
+  - <<: *square
+    position: [0.0, 0.0, 0.0]
+    rotation: [0, 0, 0]
+
   - <<: *pillar
-    position: [4.5, 0.5, 0.0]
+    position: [3.2, 6.0, 0.0]
     rotation: [0, 0, 0]
 
-  # 2. THE OVERHEAD BEAM (Between Gate 2 and 3)
-  # Position: [4.24, 4.24] to [0.0, 6.0]. 
-  # Placed at [2.1, 5.1, 2.5] to penalize jumping too high.
-  - <<: *gate_frame
-    position: [2.1, 5.1, 2.5]
-    rotation: [0, 0, 45] # Aligned with the tangent
-
-  # 3. THE EXTERNAL BOULDER (Near Gate 4: [-4.24, 4.24, 1.2])
-  # Placed at R=7.5. If the drone drifts wide due to centrifugal force, it hits this.
-  - <<: *asteroid
-    position: [-5.5, 5.5, 1.2]
-    rotation: [0, 0, 0]
-
-  # 4. THE SLALOM SLITS (Near Gate 5: [-6, 0, 1.2])
-  # Two pillars creating a narrow "window" for the drone to fly through.
   - <<: *pillar
-    position: [-6.5, 1.0, 0.0]
-    rotation: [0, 0, 0]
-  - <<: *pillar
-    position: [-6.5, -1.0, 0.0]
+    position: [-4.8, 5.7, 0.0]
     rotation: [0, 0, 0]
 
-  # 5. THE BELLY SCRAPER (Near Gate 6: [-4.24, -4.24, 1.2])
-  # A sphere placed at [ -4.0, -4.0, 0.0]. 
-  # Forces the HOCBF to keep the drone from dipping too low.
-  - <<: *asteroid
-    position: [-4.0, -4.0, -0.2]
+  - <<: *pillar
+    position: [-6.0, 4.0, 0.0]
     rotation: [0, 0, 0]
 
-  # 6. THE TUNNEL (Near Gate 7: [0, -6, 1.2])
-  # A vertical pillar right inside the radius to tighten the corner.
   - <<: *pillar
-    position: [1.0, -5.5, 0.0]
+    position: [-2.0, -6.5, 0.0]
     rotation: [0, 0, 0]
 
-  # 7. THE FINISH LINE CHICANE (Near Gate 8: [4.24, -4.24, 1.2])
-  # A final obstacle to test the "Loop" blending logic.
-  - <<: *pillar
-    position: [5.0, -3.5, 0.0]
-    rotation: [0, 0, 0]

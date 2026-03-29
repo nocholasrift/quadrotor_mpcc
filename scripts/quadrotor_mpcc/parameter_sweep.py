@@ -62,7 +62,7 @@ def run_single(env, alpha0, alpha1, max_steps=2000):
         x_i = env.solver.get(0, "x")
         u_i = env.solver.get(0, "u")
 
-        hddot, lfh, cbf, LgLfh = env.cbf_func(
+        hddot, lfh, cbf,  _, _  = env.cbf_func(
             param_dict["x"], param_dict["y"], param_dict["z"],
             param_dict["vx"], param_dict["vy"], param_dict["vz"],
             param_dict["e1x"], param_dict["e1y"], param_dict["e1z"],
@@ -75,7 +75,7 @@ def run_single(env, alpha0, alpha1, max_steps=2000):
         cbf_val = np.sign(cbf) * min(np.abs(cbf), np.abs(env.max_tube_radius - dists[champ_ind]))
         cbf_vals.append(cbf_val)
 
-        if terminated or truncated:
+        if terminated or truncated or dists[champ_ind] > 2 * env.max_tube_radius:
             break
 
     cbf_arr = np.array(cbf_vals)
@@ -221,14 +221,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default=None)
     parser.add_argument("--track", type=str, default="3d_square")
-    parser.add_argument("--n_runs", type=int, default=10)
-    parser.add_argument("--alphas", type=float, nargs="+", default=[0.0, 2.5, 5.0])
+    parser.add_argument("--n_runs", type=int, default=5)
+    parser.add_argument("--alphas", type=float, nargs="+", default=[0.1, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 4.5, 5.0])
+    parser.add_argument("--plot_range", type=float, nargs=2, metavar=('MIN', 'MAX'), help="Subset of alphas to plot")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--metrics", nargs="+", 
                         choices=["violation_count", "violation_pct", "violation_area", "min_cbf", "mean_cbf"])
     
     args = parser.parse_args()
 
+    # Load or Run Sweep
     if args.data:
         all_results, alpha_vals, track, n_runs = load_results(args.data)
     else:
@@ -236,6 +238,24 @@ def main():
         n_runs = args.n_runs
         save_path = get_save_path(base=args.track, overwrite=args.overwrite)
         save_results(save_path, all_results, alpha_vals, track, n_runs)
+
+    # --- NEW FILTERING LOGIC ---
+    if args.plot_range:
+        a_min, a_max = args.plot_range
+        # 1. Filter the alpha list (keeping original order)
+        filtered_alphas = [a for a in alpha_vals if a_min <= a <= a_max]
+        
+        # 2. Filter the results dictionary
+        filtered_results = {
+            combo: metrics for combo, metrics in all_results.items()
+            if (combo[0] in filtered_alphas and combo[1] in filtered_alphas)
+        }
+        
+        # 3. Swap them in for the plotter
+        alpha_vals = filtered_alphas
+        all_results = filtered_results
+        print(f"Subsetting plot to alpha range [{a_min}, {a_max}]. New grid size: {len(alpha_vals)}x{len(alpha_vals)}")
+    # ---------------------------
 
     plot_results(all_results, alpha_vals, track, n_runs, selected_metrics=args.metrics)
 
