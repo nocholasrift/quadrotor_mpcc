@@ -52,8 +52,8 @@ class VolaDroneEnv(gym.Env):
 
         self.prev_solve_status = False
 
-        self.alpha0_init = 10
-        self.alpha1_init = 10
+        self.alpha0_init = 8
+        self.alpha1_init = 8
 
         # Log-space gain setup for delta-action learning
         self.alpha_min = np.array([min_alpha, min_alpha], dtype=np.float32)
@@ -354,7 +354,7 @@ class VolaDroneEnv(gym.Env):
         # local_state[10] = 0.0
         local_state[10] = max(param_dict["s_start"][0] + 1e-3, local_state[10])
 
-        if self.step_count != 0 and self.use_warm_start:
+        if self.step_count != 0 and self.use_warm_start and self.prev_solve_status:
             # if delta_s > 0.1 or not self.prev_solve_status:
             #     # basic warm start with x_i = x[0], u_i = 0
             #     # for stage in range(self.N+1):
@@ -383,8 +383,9 @@ class VolaDroneEnv(gym.Env):
 
         # print("solve time", time.time() - start_solve)
         # print("elapsed so far", time.time() - start)
-        if self.prev_solve_status:
-            self.prev_u = self.solver.get(0, "u")
+        # if self.prev_solve_status:
+        #     self.prev_u = self.solver.get(0, "u")
+        self.prev_u = self.solver.get(0, "u")
 
         # next_local_state = self.solver.get(1, "x")
         self.integrator.set("x", self.state)
@@ -418,6 +419,7 @@ class VolaDroneEnv(gym.Env):
 
         # Truncation: Drone flew way off course (safety check)
         truncated = (
+            # bool(dists[closest_ind] > 100)
             bool(dists[closest_ind] > 3 * self.max_tube_radius)
             or self.step_count >= self.max_step
         )
@@ -609,8 +611,8 @@ def main():
     # track = "race_uzh_19g"
 
     # looped tracks
-    # track = "figure8"
-    track = "3d_loop"
+    track = "figure8"
+    # track = "3d_loop"
     # track = "3d_square"
     # track = "3d_square_loop"
     # loop = True

@@ -3,7 +3,7 @@ import time
 import numpy as np
 import matplotlib
 
-matplotlib.use("tkAgg")
+# matplotlib.use("tkAgg")
 import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter
 from scipy.spatial import KDTree
