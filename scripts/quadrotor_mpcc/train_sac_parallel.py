@@ -15,6 +15,9 @@ from acados_settings import create_ocp
 SAVE_DIR = "./results"
 
 
+max_steps = 1500
+
+
 def make_env(track, rank, seed=0):
     """
     Create a single environment instance.
@@ -26,7 +29,6 @@ def make_env(track, rank, seed=0):
     """
 
     def _init():
-        max_steps = 1500
         ocp, cbf_func = create_ocp(tube_degree)
         env = VolaDroneEnv(
             track, normalize_obs=True, render_mode=None, max_step=max_steps
@@ -42,9 +44,10 @@ def make_env(track, rank, seed=0):
 if __name__ == "__main__":
     # Configuration
     # tracks = ["straight_line", "race_uzh_19g"]
-    tracks = ["straight_line", "3d_square", "3d_loop"]
-    n_envs = 3  # Number of parallel environments
-    total_timesteps = 500_000
+    # tracks = ["straight_line", "3d_square", "3d_loop"]
+    tracks = ["straight_line", "figure8", "3d_square", "3d_loop"]
+    n_envs = 4  # Number of parallel environments
+    total_timesteps = 300_000
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     print(f"\n{'='*60}")
@@ -70,7 +73,9 @@ if __name__ == "__main__":
     # Create evaluation environment (single env)
     print(f"\nCreating evaluation environment: {tracks[0]}")
     ocp, cbf_func = create_ocp(tube_degree)
-    eval_env = Monitor(VolaDroneEnv(tracks[0], normalize_obs=True))
+    eval_env = Monitor(
+        TimeLimit(VolaDroneEnv(tracks[0], normalize_obs=True), max_steps)
+    )
 
     # Callbacks
     checkpoint_callback = CheckpointCallback(

@@ -52,8 +52,8 @@ class VolaDroneEnv(gym.Env):
 
         self.prev_solve_status = False
 
-        self.alpha0_init = 5.0
-        self.alpha1_init = 5.0
+        self.alpha0_init = 10
+        self.alpha1_init = 10
 
         # Log-space gain setup for delta-action learning
         self.alpha_min = np.array([min_alpha, min_alpha], dtype=np.float32)
@@ -124,6 +124,7 @@ class VolaDroneEnv(gym.Env):
         self.M = 10
         self.nx = ocp.model.x.rows()  # [px, py, pz, vx, vy, vz, ax, ay, az, s, s_dot]
         self.nu = ocp.model.u.rows()  # [jx, jy, jz, s_ddot]
+        self.prev_u = np.zeros(self.nu)
 
         # 20% buffer on as far as robot can travel in horizon time
         self.track_horizon_window = max_s_dot * Tf * 1.2
@@ -147,8 +148,18 @@ class VolaDroneEnv(gym.Env):
         obs[:-3] = (obs[:-3] - mean[:-3]) / std[:-3]
 
         # log-alpha: true bounds known
-        obs[-3] = 2.0 * (obs[-3] - self.log_alpha_min[0]) / (self.log_alpha_max[0] - self.log_alpha_min[0]) - 1.0
-        obs[-2] = 2.0 * (obs[-2] - self.log_alpha_min[1]) / (self.log_alpha_max[1] - self.log_alpha_min[1]) - 1.0
+        obs[-3] = (
+            2.0
+            * (obs[-3] - self.log_alpha_min[0])
+            / (self.log_alpha_max[0] - self.log_alpha_min[0])
+            - 1.0
+        )
+        obs[-2] = (
+            2.0
+            * (obs[-2] - self.log_alpha_min[1])
+            / (self.log_alpha_max[1] - self.log_alpha_min[1])
+            - 1.0
+        )
 
         # s_dot: true bounds [0, max_s_dot]
         obs[-1] = 2.0 * (obs[-1] / max_s_dot) - 1.0
@@ -297,7 +308,6 @@ class VolaDroneEnv(gym.Env):
             )
             self.alpha0, self.alpha1 = np.exp(self.log_alphas)
 
-
         occ_data = []
         if len(self.pcl) > 0:
             project_start = time.time()
@@ -316,16 +326,13 @@ class VolaDroneEnv(gym.Env):
             occ_data = occ_data[mask]
 
             setup_start = time.time()
-            
+
             a_val, b_val, c_val, d_val = self.tube_optimizer.solve(
-                occ_data,
-                local_window["L"],
-                self.max_tube_radius,
-                solver=cp.CLARABEL
+                occ_data, local_window["L"], self.max_tube_radius, solver=cp.CLARABEL
             )
-            
+
             # print("Total setup + solve time:", time.time() - setup_start)
-            
+
             self.tube_coeffs[0, :] = a_val
             self.tube_coeffs[1, :] = b_val
             self.tube_coeffs[2, :] = c_val
@@ -372,14 +379,16 @@ class VolaDroneEnv(gym.Env):
 
         # Evolve physics
         start_solve = time.time()
-        self.prev_solve_status = (self.solver.solve() == 0)
-        
+        self.prev_solve_status = self.solver.solve() == 0
+
         # print("solve time", time.time() - start_solve)
         # print("elapsed so far", time.time() - start)
+        if self.prev_solve_status:
+            self.prev_u = self.solver.get(0, "u")
 
         # next_local_state = self.solver.get(1, "x")
         self.integrator.set("x", self.state)
-        self.integrator.set("u", self.solver.get(0, "u"))
+        self.integrator.set("u", self.prev_u)
         self.integrator.set("p", local_p)
         self.integrator.solve()
         next_local_state = self.integrator.get("x")
@@ -409,11 +418,18 @@ class VolaDroneEnv(gym.Env):
 
         # Truncation: Drone flew way off course (safety check)
         truncated = (
-            bool(np.linalg.norm(self.state[:3]) > 100.0)
+            bool(dists[closest_ind] > 3 * self.max_tube_radius)
             or self.step_count >= self.max_step
         )
 
-        reward = self._get_reward(gym_obs, self.state[-2], terminated, self.prev_solve_status, delta_log_action)
+        # print(self.prev_solve_status)
+        reward = self._get_reward(
+            gym_obs,
+            self.state[-2],
+            terminated,
+            self.prev_solve_status,
+            delta_log_action,
+        )
 
         # print("un-norm", gym_obs)
         if self.should_normalize_obs:
@@ -479,7 +495,6 @@ class VolaDroneEnv(gym.Env):
         #     self.log_alpha_max - self.log_alpha_min + 1e-8
         # ) - 1.0
         obs.extend(self.log_alphas.tolist())
-
         obs.append(s_dot)
 
         obs = np.nan_to_num(obs, nan=0.0, posinf=0.0, neginf=0.0)
@@ -489,7 +504,7 @@ class VolaDroneEnv(gym.Env):
 
         # 1. Progress reward
         s_dot = obs[-1]
-        progress_reward = 0.2 * np.clip(s_dot, 0, max_s_dot)
+        progress_reward = 0.15 * np.clip(s_dot, 0, max_s_dot) / max_s_dot
 
         # 2. CBF constraint violations from observation
         cbf_violation_penalty = 0.0
@@ -504,22 +519,31 @@ class VolaDroneEnv(gym.Env):
             constraint_value = self.alpha0 * cbf + self.alpha1 * lfh + hddot
             # constraint_value = np.clip(constraint_value, -10.0, 5.0)
 
-            if constraint_value < 0:  # Violation
+            if constraint_value >= 0:
+                cbf_violation_penalty += 0.01 * np.exp(-constraint_value)
+            else:
                 # Penalize proportional to violation magnitude
-                cbf_violation_penalty += -1.0 * abs(constraint_value)
+                cbf_violation_penalty -= 1.0 * np.tanh(abs(constraint_value))
 
         # 3. Alpha regularization (prefer small alpha for efficiency)
         # alpha typically in [0.1, 10]
+        # mid_alpha = (max_alpha + min_alpha) / 2
+        # alphas = np.array([self.alpha0, self.alpha1])
+        # range_alpha = max_alpha - min_alpha
+        # alpha_reg = -0.001 * np.sum(((alphas - mid_alpha) / range_alpha) ** 2)
+        # alpha_reg = np.clip(alpha_reg, -1.0, 1.0)
         alphas = np.array([self.alpha0, self.alpha1])
-        alpha_reg = -0.01 * np.sum(alphas)
+        alpha_reg = -0.05 * np.sum(alphas)
         # alpha_reg = 0
 
         # 4. Feasibility penalties (keep alpha in bounds)
         feasibility_penalty = 0.0
         if np.any(alphas < min_alpha):
-            feasibility_penalty = -1.0 * np.min(min_alpha - alphas) ** 2
+            feasibility_penalty = -0.01 * np.min(min_alpha - alphas) ** 2
         elif np.any(alphas > max_alpha):
-            feasibility_penalty = -1.0 * np.min(alphas - max_alpha) ** 2
+            feasibility_penalty = -0.01 * np.min(alphas - max_alpha) ** 2
+
+        feasibility_penalty = np.clip(feasibility_penalty, -1.0, 1.0)
 
         # 5. Terminal bonus (reached goal)
         # terminal_bonus = 5.0 if terminated else 0.0
@@ -528,7 +552,7 @@ class VolaDroneEnv(gym.Env):
         traj_len = self.track_data["s"][-1]
         if s < traj_len - self.track_horizon_window:
 
-            if solver_status != 0:
+            if not solver_status:
                 self.n_consecutive_infeasibilities += 1
                 solver_status_reward -= 0.5
             else:
@@ -540,17 +564,17 @@ class VolaDroneEnv(gym.Env):
         # Action smoothness penalty
         action_smooth_penalty = 0.0
         if delta_log_action is not None:
-            action_smooth_penalty = -0.01 * float(np.sum(delta_log_action**2))
+            action_smooth_penalty = -0.005 * float(np.sum(delta_log_action**2))
 
-        # if np.random.random() < 0.01:  # Log 1% of the time
-        #     print(
-        #         f"Reward breakdown: progress={progress_reward:.2f}, "
-        #         f"cbf_viol={cbf_violation_penalty:.2f}, "
-        #         f"alpha_reg={alpha_reg:.2f}, "
-        #         f"feasibility={feasibility_penalty:.2f}, "
-        #         f"solver_reward={solver_status_reward:.2f}, "
-        #         f"action_smooth={action_smooth_penalty:.2f}"
-        #     )
+        if np.random.random() < 0.01:  # Log 1% of the time
+            print(
+                f"Reward breakdown: progress={progress_reward:.2f}, "
+                f"cbf_viol={cbf_violation_penalty:.2f}, "
+                f"alpha_reg={alpha_reg:.2f}, "
+                f"feasibility={feasibility_penalty:.2f}, "
+                f"solver_reward={solver_status_reward:.2f}, "
+                f"action_smooth={action_smooth_penalty:.2f}"
+            )
 
         # Total reward
         reward = (
@@ -596,14 +620,14 @@ def main():
     env.reset()
     for i in range(0, 2000):
         start = time.time()
-        _, _, done, _, _ = env.step()
+        _, _, done, truncated, _ = env.step()
         start = time.time()
 
         if i % 3 == 0:
             env.render()
 
         # input()
-        if done:
+        if done or truncated:
             input()
             break
 

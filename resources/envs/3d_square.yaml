@@ -1,3 +1,44 @@
+# templates:
+#   - &corner_pillar
+#     type: "box"
+#     size: [0.4, 0.4, 20.0] # Sleek, tall pillars
+#
+# obstacles:
+#   # CORNER 1: Top-Right (Inside the bend)
+#   # Trajectory is near [4.8, 4.8], Pillar is at [4.0, 4.0]
+#   - <<: *corner_pillar
+#     position: [3.9, 3.9, 0.0]
+#     rotation: [0, 0, 0]
+#
+#   # CORNER 2: Top-Left (Inside the bend)
+#   # Trajectory is near [-4.8, 4.8], Pillar is at [-4.0, 4.0]
+#   - <<: *corner_pillar
+#     position: [-3.9, 3.9, 0.0]
+#     rotation: [0, 0, 0]
+#
+#   # CORNER 3: Bottom-Left (Inside the bend)
+#   # Trajectory is near [-4.8, -4.8], Pillar is at [-4.0, -4.0]
+#   - <<: *corner_pillar
+#     position: [-3.8, -3.8, 0.0]
+#     rotation: [0, 0, 0]
+#
+#   # CORNER 4: Bottom-Right (Inside the bend)
+#   # Trajectory is near [4.8, -4.8], Pillar is at [4.0, -4.0]
+#   - <<: *corner_pillar
+#     position: [3.8, -3.8, 0.0]
+#     rotation: [0, 0, 0]
+#
+#   # THE "GATE" EFFECT: Adding two more pillars on the straightaways 
+#   # just inside the line to keep the drone from drifting toward the center.
+#   - <<: *corner_pillar
+#     position: [0.0, 4.5, 0.0] # Top straight
+#     rotation: [0, 0, 0]
+#
+#   - <<: *corner_pillar
+#     position: [0.0, -4.2, 0.0] # Bottom straight
+#     rotation: [0, 0, 0]
+#
+
 templates:
   - &corner_pillar
     type: "box"
@@ -7,7 +48,7 @@ obstacles:
   # CORNER 1: Top-Right (Inside the bend)
   # Trajectory is near [4.8, 4.8], Pillar is at [4.0, 4.0]
   - <<: *corner_pillar
-    position: [4.0, 4.0, 0.0]
+    position: [3.9, 3.8, 0.0]
     rotation: [0, 0, 0]
 
   # CORNER 2: Top-Left (Inside the bend)

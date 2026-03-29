@@ -56,7 +56,8 @@ def collect_normalization_statistics(
 if __name__ == "__main__":
     # track = "race_uzh_19g"
     # tracks = ["straight_line", "race_uzh_19g"]
-    tracks = ["straight_line", "3d_square", "3d_loop"]
+    # tracks = ["straight_line", "3d_square", "3d_loop"]
+    tracks = ["straight_line", "figure8"]
     collect_normalization_statistics(
         tracks=tracks, num_episodes=10, steps_per_episode=500
     )
