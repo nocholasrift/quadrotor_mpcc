@@ -72,10 +72,10 @@ def run_single(env, alpha0, alpha1, max_steps=2000):
             *param_dict["global_params"],
             env.alpha0, env.alpha1, x_i, u_i,
         )
-        cbf_val = np.sign(cbf) * min(np.abs(cbf), np.abs(env.max_tube_radius - dists[champ_ind]))
+        cbf_val = min(float(cbf), float(env.max_tube_radius - dists[champ_ind]))
         cbf_vals.append(cbf_val)
 
-        if terminated or truncated or dists[champ_ind] > 2 * env.max_tube_radius:
+        if terminated or truncated or dists[champ_ind] > 3 * env.max_tube_radius:
             break
 
     cbf_arr = np.array(cbf_vals)
