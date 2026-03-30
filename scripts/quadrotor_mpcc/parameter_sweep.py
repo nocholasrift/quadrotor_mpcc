@@ -151,7 +151,7 @@ def plot_results(all_results, alpha_vals, track, n_runs, selected_metrics=None):
     temp_env = VolaDroneEnv(track, render_mode=None, normalize_obs=False, loop=False)
     total_s = temp_env.track_data["s"][-1]
     horizon_window = temp_env.track_horizon_window
-    
+
     # The effective length is the max 's' the drone can actually reach
     effective_max_s = total_s - horizon_window
     renorm_factor = total_s / effective_max_s
@@ -184,16 +184,16 @@ def plot_results(all_results, alpha_vals, track, n_runs, selected_metrics=None):
         data = np.zeros((n, n))
         for (a0, a1), vals in all_results.items():
             i, j = alpha_vals.index(a1), alpha_vals.index(a0)
-            
+
             raw_val = np.mean(vals[metric])
-            
+
             # Apply renormalization only to completion percentage
             if metric == "completion_pct":
                 data[i, j] = min(100.0, raw_val * renorm_factor)
             else:
                 data[i, j] = raw_val
 
-            if data[i , j] >= 99.85:
+            if data[i, j] >= 99.85:
                 data[i, j] = 100
 
         v_min, v_max = np.min(data), np.max(data)
@@ -231,13 +231,19 @@ def plot_results(all_results, alpha_vals, track, n_runs, selected_metrics=None):
 
             label_text = r"$\bm{" + f"{val:{local_fmt}}" + r"}$"
             ax.text(
-                j, i, label_text,
-                ha="center", va="center",
-                color=color, fontsize=CELL_FONT_SIZE,
+                j,
+                i,
+                label_text,
+                ha="center",
+                va="center",
+                color=color,
+                fontsize=CELL_FONT_SIZE,
             )
 
         fig.colorbar(
-            im, ax=ax, shrink=0.8,
+            im,
+            ax=ax,
+            shrink=0.8,
             extend="max" if metric not in ["success", "completion_pct"] else "neither",
         )
 
@@ -263,7 +269,9 @@ def main():
     parser.add_argument("--data", type=str, default=None)
     parser.add_argument("--track", type=str, default="3d_square")
     parser.add_argument("--n_runs", type=int, default=5)
-    parser.add_argument("--alphas", type=float, nargs="+", default=[0.1, 2.0, 4.0, 6.0, 8.0, 10.0])
+    parser.add_argument(
+        "--alphas", type=float, nargs="+", default=[0.1, 2.0, 4.0, 6.0, 8.0, 10.0]
+    )
     # parser.add_argument("--alphas", type=float, nargs="+", default=[6.0, 8.0, 10.0])
     parser.add_argument("--plot_range", type=float, nargs=2)
     parser.add_argument("--metrics", nargs="+")
@@ -288,7 +296,12 @@ def main():
         all_results, alpha_vals, track = run_sweep(args.track, args.alphas, args.n_runs)
         save_path = get_save_path(args.track, args.overwrite)
         save_dict = {
-            m: np.array([all_results[tuple(c)][m] for c in list(product(alpha_vals, alpha_vals))])
+            m: np.array(
+                [
+                    all_results[tuple(c)][m]
+                    for c in list(product(alpha_vals, alpha_vals))
+                ]
+            )
             for m in all_results[list(all_results.keys())[0]].keys()
         }
         np.savez(
@@ -303,9 +316,15 @@ def main():
     if args.plot_range:
         a_min, a_max = args.plot_range
         alpha_vals = [a for a in alpha_vals if a_min <= a <= a_max]
-        all_results = {k: v for k, v in all_results.items() if (k[0] in alpha_vals and k[1] in alpha_vals)}
+        all_results = {
+            k: v
+            for k, v in all_results.items()
+            if (k[0] in alpha_vals and k[1] in alpha_vals)
+        }
 
-    plot_results(all_results, alpha_vals, track, args.n_runs, selected_metrics=args.metrics)
+    plot_results(
+        all_results, alpha_vals, track, args.n_runs, selected_metrics=args.metrics
+    )
 
 
 if __name__ == "__main__":

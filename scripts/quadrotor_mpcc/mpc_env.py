@@ -58,8 +58,8 @@ class VolaDroneEnv(gym.Env):
         else:
             self.logger = None
 
-        self.alpha0_init = 8.0
-        self.alpha1_init = 8.0
+        self.alpha0_init = 5.0
+        self.alpha1_init = 5.0
 
         # Log-space gain setup for delta-action learning
         self.alpha_min = np.array([min_alpha, min_alpha], dtype=np.float32)
@@ -196,7 +196,7 @@ class VolaDroneEnv(gym.Env):
                 self.solver.set(stage, "u", np.zeros(self.nu))
 
         self.params = np.array(
-            [1.0, 100.0, 1.2, 1.0, 1.0, 2.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
+            [1.0, 100.0, 1.2, 1.0, 1.0, 20.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
         )
         # self.params = np.array(
         #     [5.0, 100.0, 1.2, 1.0, 1.0, 1.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
@@ -358,7 +358,7 @@ class VolaDroneEnv(gym.Env):
         # local_state[10] = 0.0
         local_state[10] = max(param_dict["s_start"][0] + 1e-3, local_state[10])
 
-        if self.step_count != 0 and self.use_warm_start and self.prev_solve_status:
+        if self.step_count != 0 and self.use_warm_start:  # and self.prev_solve_status:
             # if delta_s > 0.1 or not self.prev_solve_status:
             #     # basic warm start with x_i = x[0], u_i = 0
             #     # for stage in range(self.N+1):
@@ -413,10 +413,10 @@ class VolaDroneEnv(gym.Env):
         self.step_count += 1
         terminated = (
             bool(
-                self.state[10]
-                >= self.track_data["L"] - self.track_horizon_window - 0.1
                 # self.state[10]
-                # >= self.track_data["L"] - 0.1
+                # >= self.track_data["L"] - self.track_horizon_window - 0.1
+                self.state[10]
+                >= self.track_data["L"] - 0.1
             )
             and not self.loop
         )
@@ -481,7 +481,6 @@ class VolaDroneEnv(gym.Env):
             cbf_vals=[float(cbf), float(lfh), float(hddot)],
             status=self.prev_solve_status,
         )
-        
 
     def _get_obs(self, local_p, s_dot):
         n = n_knots
@@ -658,7 +657,9 @@ def main():
     # track = "3d_square_loop"
     # loop = True
 
-    env = VolaDroneEnv(track, render_mode="human", normalize_obs=False, loop=loop, log=True)
+    env = VolaDroneEnv(
+        track, render_mode="human", normalize_obs=False, loop=loop, log=True
+    )
 
     env.reset()
     for i in range(0, 2000):

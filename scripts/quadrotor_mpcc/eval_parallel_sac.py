@@ -13,8 +13,8 @@ from common import *
 MODEL_PATH = "./results/best_model/best_model.zip"
 # TRACK_TO_EVAL = "race_uzh_19g"
 # TRACK_TO_EVAL = "3d_square"
-TRACK_TO_EVAL = "3d_loop"
-# TRACK_TO_EVAL = "figure8"
+# TRACK_TO_EVAL = "3d_loop"
+TRACK_TO_EVAL = "figure8"
 # TRACK_TO_EVAL = "7gates"
 LOOP = False
 N_EPISODES = 1
@@ -28,9 +28,10 @@ def make_eval_env(track):
         normalize_obs=True,  # MUST match training
         render_mode="human",  # Enable the 3D plotting we refactored earlier
         loop=LOOP,
+        log=True,
     )
-    env = TimeLimit(env, max_episode_steps=MAX_STEPS)
-    env = Monitor(env)
+    # env = TimeLimit(env, max_episode_steps=MAX_STEPS)
+    # env = Monitor(env)
     return env
 
 
@@ -67,9 +68,12 @@ def main():
             step_count += 1
             done = terminated or truncated
 
-            if step_count % 3 == 0:
-                env.render()
+            # if step_count % 3 == 0:
+            #     env.render()
             # input()
+
+            if done and env.logger != None:
+                env.logger.save()
 
             # Optional: Print alpha values if they are in your info dict
             # print(f"Step {step_count} | alpha0: {env.unwrapped.alpha0:.2f}", end='\r')
