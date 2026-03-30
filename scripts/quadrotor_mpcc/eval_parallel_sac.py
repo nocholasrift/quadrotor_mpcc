@@ -67,7 +67,8 @@ def main():
             step_count += 1
             done = terminated or truncated
 
-            env.render()  # remove if no render method
+            if step_count % 3 == 0:
+                env.render()
             # input()
 
             # Optional: Print alpha values if they are in your info dict

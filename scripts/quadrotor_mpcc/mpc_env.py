@@ -17,6 +17,7 @@ from scipy.spatial.distance import cdist
 from acados_settings import create_ocp, resample_path
 from acados_template import AcadosOcpSolver, AcadosSimSolver
 
+from logger import VolaLogger
 from load_env import load_pcl_from_env
 from renderer import Renderer
 from tube_gen import *
@@ -34,6 +35,7 @@ class VolaDroneEnv(gym.Env):
         loop=False,
         pcl_density=20,
         use_warm_start=True,
+        log=False,
     ):
         super().__init__()
 
@@ -51,9 +53,13 @@ class VolaDroneEnv(gym.Env):
         self.use_warm_start = use_warm_start
 
         self.prev_solve_status = False
+        if log:
+            self.logger = VolaLogger(track)
+        else:
+            self.logger = None
 
-        self.alpha0_init = 8
-        self.alpha1_init = 8
+        self.alpha0_init = 8.0
+        self.alpha1_init = 8.0
 
         # Log-space gain setup for delta-action learning
         self.alpha_min = np.array([min_alpha, min_alpha], dtype=np.float32)
@@ -190,7 +196,7 @@ class VolaDroneEnv(gym.Env):
                 self.solver.set(stage, "u", np.zeros(self.nu))
 
         self.params = np.array(
-            [0.0, 100.0, 1.2, 1.0, 1.0, 20.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
+            [1.0, 100.0, 1.2, 1.0, 1.0, 2.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
         )
         # self.params = np.array(
         #     [5.0, 100.0, 1.2, 1.0, 1.0, 1.0],  # Q_c, Q_l, Q_t, Q_w, Q_sdd, Q_s
@@ -293,8 +299,6 @@ class VolaDroneEnv(gym.Env):
             window_dist=self.track_horizon_window,
             loop=self.loop,
         )
-        if local_window["L"] < 1e-1:
-            print(local_window)
 
         delta_log_action = np.zeros(2, dtype=np.float32)
         if isinstance(action, np.ndarray):
@@ -417,10 +421,13 @@ class VolaDroneEnv(gym.Env):
             and not self.loop
         )
 
+        if self.logger != None:
+            self.log(param_dict)
+
         # Truncation: Drone flew way off course (safety check)
         truncated = (
             # bool(dists[closest_ind] > 100)
-            bool(dists[closest_ind] > 3 * self.max_tube_radius)
+            bool(dists[closest_ind] > 10 * self.max_tube_radius)
             or self.step_count >= self.max_step
         )
 
@@ -441,6 +448,40 @@ class VolaDroneEnv(gym.Env):
 
         # print("norm", gym_obs)
         return gym_obs, reward, terminated, truncated, {}
+
+    def log(self, local_p):
+
+        hddot, lfh, cbf, _, _ = self.cbf_func(
+            local_p["x"],
+            local_p["y"],
+            local_p["z"],
+            local_p["vx"],
+            local_p["vy"],
+            local_p["vz"],
+            local_p["e1x"],
+            local_p["e1y"],
+            local_p["e1z"],
+            local_p["tube_a"],
+            local_p["tube_b"],
+            local_p["tube_c"],
+            local_p["tube_d"],
+            local_p["s_start"],
+            local_p["L"],
+            *local_p["global_params"],
+            self.alpha0,
+            self.alpha1,
+            self.state,
+            self.prev_u,
+        )
+
+        self.logger.log_step(
+            state=self.state,
+            tube_coeffs=self.tube_coeffs,
+            alphas=np.array([self.alpha0, self.alpha1]),
+            cbf_vals=[float(cbf), float(lfh), float(hddot)],
+            status=self.prev_solve_status,
+        )
+        
 
     def _get_obs(self, local_p, s_dot):
         n = n_knots
@@ -611,13 +652,13 @@ def main():
     # track = "race_uzh_19g"
 
     # looped tracks
-    track = "figure8"
+    # track = "figure8"
     # track = "3d_loop"
-    # track = "3d_square"
+    track = "3d_square"
     # track = "3d_square_loop"
     # loop = True
 
-    env = VolaDroneEnv(track, render_mode="human", normalize_obs=False, loop=loop)
+    env = VolaDroneEnv(track, render_mode="human", normalize_obs=False, loop=loop, log=True)
 
     env.reset()
     for i in range(0, 2000):
@@ -625,12 +666,13 @@ def main():
         _, _, done, truncated, _ = env.step()
         start = time.time()
 
-        if i % 3 == 0:
-            env.render()
+        # if i % 3 == 0:
+        #     env.render()
 
         # input()
         if done or truncated:
-            input()
+            if env.logger != None:
+                env.logger.save()
             break
 
 

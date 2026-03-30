@@ -29,7 +29,7 @@ plt.rcParams.update(
         "text.latex.preamble": r"\usepackage{amsmath} \usepackage{bm}",
     }
 )
-CELL_FONT_SIZE = 15
+CELL_FONT_SIZE = 20
 # ==========================================
 
 
@@ -146,9 +146,20 @@ def run_sweep(track, alpha_vals, n_runs):
 
 
 def plot_results(all_results, alpha_vals, track, n_runs, selected_metrics=None):
+    # --- START RENORMALIZATION LOGIC ---
+    # We instantiate a temporary env to get the horizon window and total track length
+    temp_env = VolaDroneEnv(track, render_mode=None, normalize_obs=False, loop=False)
+    total_s = temp_env.track_data["s"][-1]
+    horizon_window = temp_env.track_horizon_window
+    
+    # The effective length is the max 's' the drone can actually reach
+    effective_max_s = total_s - horizon_window
+    renorm_factor = total_s / effective_max_s
+    # --- END RENORMALIZATION LOGIC ---
+
     all_metrics = {
-        "violation_pct": (r"\textbf{Violation Percentage ($\%$)}", "Reds", ".2f"),
-        "completion_pct": (r"\textbf{Completion ($\%$)}", "YlGnBu", ".1f"),
+        "violation_pct": (r"\textbf{Violation Percentage ($\%$)}", "Reds", ".1f"),
+        "completion_pct": (r"\textbf{Completion ($\%$)}", "Reds_r", ".1f"),
         "success": (r"\textbf{Success Rate ($\%$)}", "YlGn", ".0f"),
         "violation_count": (r"\textbf{Violation Count ($Steps$)}", "Reds", ".1f"),
         "violation_area": (r"\textbf{Total Violation Area}", "Oranges", ".2f"),
@@ -156,7 +167,6 @@ def plot_results(all_results, alpha_vals, track, n_runs, selected_metrics=None):
         "mean_cbf": (r"\textbf{Mean CBF ($\bar{h}$)}", "Greens", ".2f"),
     }
 
-    # Default to Violation % and Completion %
     if not selected_metrics:
         selected_metrics = ["violation_pct", "completion_pct"]
 
@@ -174,9 +184,18 @@ def plot_results(all_results, alpha_vals, track, n_runs, selected_metrics=None):
         data = np.zeros((n, n))
         for (a0, a1), vals in all_results.items():
             i, j = alpha_vals.index(a1), alpha_vals.index(a0)
-            data[i, j] = np.mean(vals[metric])
+            
+            raw_val = np.mean(vals[metric])
+            
+            # Apply renormalization only to completion percentage
+            if metric == "completion_pct":
+                data[i, j] = min(100.0, raw_val * renorm_factor)
+            else:
+                data[i, j] = raw_val
 
-        # Logic for Colorbar scaling
+            if data[i , j] >= 99.85:
+                data[i, j] = 100
+
         v_min, v_max = np.min(data), np.max(data)
         if metric in ["success", "completion_pct", "violation_pct"]:
             v_min, v_max = (
@@ -204,31 +223,21 @@ def plot_results(all_results, alpha_vals, track, n_runs, selected_metrics=None):
 
         for i, j in product(range(n), range(n)):
             val = data[i, j]
-            color = (
-                "white"
-                if val > (v_max + v_min) / 2 and cmap_name != "RdYlGn"
-                else "black"
-            )
-            if metric in ["success", "completion_pct"]:
-                color = "white" if val < 40 else "black"
+            color = "black"
 
-            label_text = (
-                r"$\bm{" + f"{val:{fmt}}" + (r"\%" if "%" in title else "") + r"}$"
-            )
+            local_fmt = fmt
+            if val > 99.9:
+                local_fmt = ".0f"
+
+            label_text = r"$\bm{" + f"{val:{local_fmt}}" + r"}$"
             ax.text(
-                j,
-                i,
-                label_text,
-                ha="center",
-                va="center",
-                color=color,
-                fontsize=CELL_FONT_SIZE,
+                j, i, label_text,
+                ha="center", va="center",
+                color=color, fontsize=CELL_FONT_SIZE,
             )
 
         fig.colorbar(
-            im,
-            ax=ax,
-            shrink=0.8,
+            im, ax=ax, shrink=0.8,
             extend="max" if metric not in ["success", "completion_pct"] else "neither",
         )
 
@@ -236,8 +245,7 @@ def plot_results(all_results, alpha_vals, track, n_runs, selected_metrics=None):
         axes.flat[j].axis("off")
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
-    # Auto-save for LaTeX
-    save_name = f"gain_sweep_{track}.pdf"
+    save_name = f"gain_sweep_{track}.png"
     plt.savefig(save_name, bbox_inches="tight", dpi=300)
     print(f"Figure saved to: {save_name}")
     plt.show()
@@ -255,13 +263,8 @@ def main():
     parser.add_argument("--data", type=str, default=None)
     parser.add_argument("--track", type=str, default="3d_square")
     parser.add_argument("--n_runs", type=int, default=5)
-    parser.add_argument(
-        # "--alphas", type=float, nargs="+", default=[0.1, 2.0, 4.0, 6.0, 8.0, 10.0]
-        "--alphas",
-        type=float,
-        nargs="+",
-        default=[0.1, 2.0],
-    )
+    parser.add_argument("--alphas", type=float, nargs="+", default=[0.1, 2.0, 4.0, 6.0, 8.0, 10.0])
+    # parser.add_argument("--alphas", type=float, nargs="+", default=[6.0, 8.0, 10.0])
     parser.add_argument("--plot_range", type=float, nargs=2)
     parser.add_argument("--metrics", nargs="+")
     parser.add_argument("--overwrite", action="store_true")
@@ -269,7 +272,6 @@ def main():
     args = parser.parse_args()
 
     if args.data:
-        # Load results with a backward-compatible check for new metrics
         d = np.load(args.data, allow_pickle=True)
         alpha_vals = d["alpha_vals"].tolist()
         combos = [tuple(c) for c in d["combos"]]
@@ -285,14 +287,8 @@ def main():
     else:
         all_results, alpha_vals, track = run_sweep(args.track, args.alphas, args.n_runs)
         save_path = get_save_path(args.track, args.overwrite)
-        # Flatten dictionary for saving
         save_dict = {
-            m: np.array(
-                [
-                    all_results[tuple(c)][m]
-                    for c in list(product(alpha_vals, alpha_vals))
-                ]
-            )
+            m: np.array([all_results[tuple(c)][m] for c in list(product(alpha_vals, alpha_vals))])
             for m in all_results[list(all_results.keys())[0]].keys()
         }
         np.savez(
@@ -307,15 +303,9 @@ def main():
     if args.plot_range:
         a_min, a_max = args.plot_range
         alpha_vals = [a for a in alpha_vals if a_min <= a <= a_max]
-        all_results = {
-            k: v
-            for k, v in all_results.items()
-            if (k[0] in alpha_vals and k[1] in alpha_vals)
-        }
+        all_results = {k: v for k, v in all_results.items() if (k[0] in alpha_vals and k[1] in alpha_vals)}
 
-    plot_results(
-        all_results, alpha_vals, track, args.n_runs, selected_metrics=args.metrics
-    )
+    plot_results(all_results, alpha_vals, track, args.n_runs, selected_metrics=args.metrics)
 
 
 if __name__ == "__main__":

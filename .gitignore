@@ -11,3 +11,4 @@ acados_ocp.json
 *.npz
 *.png
 stats/
+logs/
